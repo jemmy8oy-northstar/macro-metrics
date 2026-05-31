@@ -11,6 +11,7 @@ COPY MacroMetrics.DomainModels/*.csproj ./MacroMetrics.DomainModels/
 COPY MacroMetrics.Services/*.csproj ./MacroMetrics.Services/
 COPY MacroMetrics.EntityModels/*.csproj ./MacroMetrics.EntityModels/
 COPY MacroMetrics.Database/*.csproj ./MacroMetrics.Database/
+COPY MacroMetrics.Services.Tests/*.csproj ./MacroMetrics.Services.Tests/
 
 # Restore dependencies
 RUN dotnet restore
