@@ -11,10 +11,27 @@ namespace MacroMetrics.Services.Tests.Fetchers;
 /// </summary>
 /// <remarks>
 /// BDD-aligned from Issue #55 (US-B14).
+///
+/// Response JSON is loaded from the shared test fixtures in
+/// <c>test-assets/yfinance/</c> (copied to <c>TestFixtures/yfinance/</c>
+/// in the test output directory by the MSBuild <c>Content</c> item in the
+/// project file).  The same fixture files are consumed by the Python sidecar
+/// tests, ensuring both services agree on the wire format.
 /// </remarks>
 public sealed class YFinanceFetcherServiceTests
 {
     private const string SidecarBaseUrl = "http://yfinance-sidecar:8000";
+
+    // ── Fixture loading ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Base path for shared test fixtures, relative to the test output directory.
+    /// </summary>
+    private static readonly string FixturesDir =
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestFixtures", "yfinance");
+
+    private static string LoadFixture(string filename)
+        => File.ReadAllText(Path.Combine(FixturesDir, filename));
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -22,14 +39,6 @@ public sealed class YFinanceFetcherServiceTests
     {
         var client = new HttpClient(handler) { BaseAddress = new Uri(SidecarBaseUrl) };
         return new YFinanceFetcherService(client);
-    }
-
-    /// <summary>Builds a minimal sidecar JSON payload.</summary>
-    private static string BuildSidecarJson(string ticker, params (string Date, double Close)[] points)
-    {
-        var items = string.Join(",", points.Select(p =>
-            $$$"""{"date":"{{{p.Date}}}","close":{{{p.Close.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}]""".Replace("]", "}")));
-        return $$"""{"ticker":"{{ticker}}","points":[{{items}}]}""";
     }
 
     private static HttpResponseMessage OkJson(string json)
@@ -50,7 +59,7 @@ public sealed class YFinanceFetcherServiceTests
     public async Task FetchRawAsync_KnownMetric_CallsSidecarWithCorrectTicker(
         string metricId, string expectedEncodedTicker)
     {
-        var handler = new FakeHttpMessageHandler(_ => OkJson(BuildSidecarJson("GC=F")));
+        var handler = new FakeHttpMessageHandler(_ => OkJson(LoadFixture("gc_f_series.json")));
         var sut = BuildSut(handler);
 
         await sut.FetchRawAsync(metricId);
@@ -67,7 +76,7 @@ public sealed class YFinanceFetcherServiceTests
     [Fact]
     public async Task FetchRawAsync_Gold_CallsSeriesGcFEndpoint()
     {
-        var handler = new FakeHttpMessageHandler(_ => OkJson(BuildSidecarJson("GC=F")));
+        var handler = new FakeHttpMessageHandler(_ => OkJson(LoadFixture("gc_f_series.json")));
         var sut = BuildSut(handler);
 
         await sut.FetchRawAsync("gold");
@@ -84,13 +93,13 @@ public sealed class YFinanceFetcherServiceTests
     /// BDD: The sidecar returns a JSON body with "ticker" and a "points" array of
     /// {date, close} objects. Each close value is mapped to a DataPoint value,
     /// and each date string is preserved as-is (ISO-8601).
+    ///
+    /// Uses the shared <c>gc_f_series.json</c> fixture.
     /// </summary>
     [Fact]
     public async Task FetchRawAsync_ParsesPointsArrayIntoMetricPoints()
     {
-        var json = BuildSidecarJson("GC=F",
-            ("2024-01-15", 2023.50),
-            ("2024-01-16", 2031.10));
+        var json = LoadFixture("gc_f_series.json");
         var handler = new FakeHttpMessageHandler(_ => OkJson(json));
         var sut = BuildSut(handler);
 
@@ -105,12 +114,14 @@ public sealed class YFinanceFetcherServiceTests
         Assert.Equal(2031.10, result[1].Value, precision: 5);
     }
 
+    /// <summary>
+    /// BDD: Date strings from the sidecar are passed through unchanged.
+    /// Uses the shared <c>btc_usd_series.json</c> fixture.
+    /// </summary>
     [Fact]
     public async Task FetchRawAsync_DatePassthrough_PreservesIsoFormat()
     {
-        var json = BuildSidecarJson("BTC-USD",
-            ("2014-09-30", 400.00),
-            ("2024-01-01", 42000.00));
+        var json = LoadFixture("btc_usd_series.json");
         var handler = new FakeHttpMessageHandler(_ => OkJson(json));
         var sut = BuildSut(handler);
 
@@ -123,7 +134,8 @@ public sealed class YFinanceFetcherServiceTests
     [Fact]
     public async Task FetchRawAsync_EmptyPoints_ReturnsEmptyList()
     {
-        var handler = new FakeHttpMessageHandler(_ => OkJson(BuildSidecarJson("^FTSE")));
+        var json = LoadFixture("empty_series.json");
+        var handler = new FakeHttpMessageHandler(_ => OkJson(json));
         var sut = BuildSut(handler);
 
         var result = await sut.FetchRawAsync("ftse100");
