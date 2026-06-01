@@ -29,13 +29,21 @@ public sealed class FredFetcherService : IFredFetcherService
     /// <summary>
     /// Maps each supported metric ID to its FRED series identifier.
     /// </summary>
+    /// <remarks>
+    /// <b>Known issue — "cape" series:</b> The Shiller CAPE ratio is <em>not</em> published
+    /// by the St. Louis Fed; the FRED REST API returns HTTP 400 for series ID <c>"CAPE"</c>.
+    /// The authoritative source is Robert Shiller's Yale dataset. Until a dedicated
+    /// non-FRED fetcher is implemented for this metric, any live call for <c>"cape"</c>
+    /// via this service will result in a <see cref="MacroMetrics.Abstractions.Exceptions.FetcherException"/>.
+    /// See: https://github.com/jemmy8oy/macro-metrics/issues — track as a follow-up story.
+    /// </remarks>
     private static readonly Dictionary<string, string> SeriesIds =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["us-house-prices"]  = "CSUSHPINSA",
             ["us-wages"]         = "CES0500000003",
             ["us-cpi"]           = "CPIAUCSL",
-            ["cape"]             = "CAPE",
+            ["cape"]             = "CAPE",       // TODO: FRED returns HTTP 400 — series does not exist on FRED
             ["us-10yr-treasury"] = "DGS10",
         };
 

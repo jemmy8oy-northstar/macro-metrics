@@ -39,30 +39,58 @@ internal sealed class RequiresFredApiKeyTheoryAttribute : TheoryAttribute
 
 /// <summary>
 /// Shared fixture for <see cref="FredFetcherServiceLiveTests"/>.
-/// Fetches live data from the FRED API for all five US metrics exactly once,
+/// Fetches live data from the FRED API for the four FRED-hosted US metrics exactly once,
 /// sequentially and with a delay between requests to respect rate limits.
 /// The cached results are reused across all test methods to avoid redundant
 /// API calls and burst-rate 429 errors.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Why "cape" is excluded from live tests:</b> The Shiller CAPE ratio (series ID
+/// <c>"CAPE"</c>) is <em>not</em> a FRED data series — the St. Louis Fed does not publish
+/// it and the FRED REST API returns HTTP 400 for that series ID. The CAPE data originates
+/// from Robert Shiller's Yale dataset and must be sourced via a dedicated integration
+/// (e.g. the free Shiller data wrapper API). It is therefore excluded from these live
+/// FRED tests. The series-ID routing in <see cref="FredFetcherService"/> should be
+/// updated once a valid alternative source is wired up.
+/// </para>
+/// </remarks>
 public sealed class FredLiveApiFixture : IAsyncLifetime
 {
     private const string FredBaseUrl = "https://api.stlouisfed.org";
     private const string EnvVarName  = "FRED__ApiKey";
 
-    /// <summary>All five US metric IDs supported by <see cref="FredFetcherService"/>.</summary>
+    /// <summary>
+    /// The four US metric IDs that are live-testable against the FRED REST API.
+    /// <c>"cape"</c> is intentionally omitted — see class remarks for the reason.
+    /// </summary>
     public static readonly IReadOnlyList<string> MetricIds =
     [
         "us-house-prices",
         "us-wages",
         "us-cpi",
-        "cape",
         "us-10yr-treasury",
     ];
 
     private readonly Dictionary<string, IReadOnlyList<IMetricPoint>> _cache = new();
+    private readonly Dictionary<string, Exception> _fetchErrors = new();
 
-    /// <summary>Returns cached live observations for <paramref name="metricId"/>.</summary>
-    public IReadOnlyList<IMetricPoint> GetObservations(string metricId) => _cache[metricId];
+    /// <summary>
+    /// Returns cached live observations for <paramref name="metricId"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Re-thrown when the fixture failed to fetch this metric during initialisation,
+    /// so the individual test fails with a descriptive message instead of a generic
+    /// KeyNotFoundException.
+    /// </exception>
+    public IReadOnlyList<IMetricPoint> GetObservations(string metricId)
+    {
+        if (_fetchErrors.TryGetValue(metricId, out var ex))
+            throw new InvalidOperationException(
+                $"Live fixture failed to fetch '{metricId}' during initialisation: {ex.Message}", ex);
+
+        return _cache[metricId];
+    }
 
     /// <summary>
     /// True when the <c>FRED__ApiKey</c> environment variable is present; tests should
@@ -80,7 +108,16 @@ public sealed class FredLiveApiFixture : IAsyncLifetime
 
         foreach (var metricId in MetricIds)
         {
-            _cache[metricId] = await sut.FetchRawAsync(metricId);
+            try
+            {
+                _cache[metricId] = await sut.FetchRawAsync(metricId);
+            }
+            catch (Exception ex)
+            {
+                // Store the per-metric error so a single bad series ID cannot cascade
+                // into failures for every other metric in the fixture.
+                _fetchErrors[metricId] = ex;
+            }
 
             // One-second pause between requests to stay well within the FRED API's
             // rate limit (120 req/min) and avoid HTTP 429 bursts in CI.
@@ -117,10 +154,15 @@ public sealed class FredLiveApiFixture : IAsyncLifetime
 /// Live integration tests for <see cref="FredFetcherService"/> that make real HTTP calls
 /// to the FRED REST API (<c>api.stlouisfed.org</c>).
 /// <para>
-/// All five metrics are fetched exactly once by <see cref="FredLiveApiFixture.InitializeAsync"/>
-/// (sequentially, with a 1-second delay between requests) and the results cached for the
-/// duration of the test run. This keeps total API calls to a minimum and prevents HTTP 429
-/// burst-rate errors that occur when multiple <c>[Theory]</c> cases fire simultaneously.
+/// The four FRED-hosted metrics are fetched exactly once by
+/// <see cref="FredLiveApiFixture.InitializeAsync"/> (sequentially, with a 1-second delay
+/// between requests) and the results cached for the duration of the test run. This keeps
+/// total API calls to a minimum and prevents HTTP 429 burst-rate errors.
+/// </para>
+/// <para>
+/// <c>"cape"</c> is excluded from live tests because the FRED API returns HTTP 400 for
+/// series ID <c>"CAPE"</c> — the Shiller CAPE ratio is not a FRED-hosted series.
+/// See <see cref="FredLiveApiFixture"/> remarks for details.
 /// </para>
 /// <para>
 /// These tests require the <c>FRED__ApiKey</c> environment variable to be set. They skip
@@ -135,13 +177,14 @@ public sealed class FredFetcherServiceLiveTests(FredLiveApiFixture fixture)
     // ── Live connectivity checks ──────────────────────────────────────────
 
     /// <summary>
-    /// Verifies that the FRED API returned non-empty observations for each supported US metric.
+    /// Verifies that the FRED API returned non-empty observations for each FRED-hosted US metric.
     /// </summary>
     [RequiresFredApiKeyTheory]
     [InlineData("us-house-prices")]
     [InlineData("us-wages")]
     [InlineData("us-cpi")]
-    [InlineData("cape")]
+    // "cape" intentionally excluded: FRED series "CAPE" does not exist (HTTP 400).
+    // The Shiller CAPE ratio is sourced from Robert Shiller's Yale dataset, not FRED.
     [InlineData("us-10yr-treasury")]
     public void FetchRawAsync_LiveApi_ReturnsNonEmptyObservations(string metricId)
     {
