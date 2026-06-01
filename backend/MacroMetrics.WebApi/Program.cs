@@ -17,8 +17,10 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference("/scalar/v1");
 }
 
-using (var scope = app.Services.CreateScope())
+// Skip migrations when running under the test host (WebApplicationFactory).
+if (!app.Environment.IsEnvironment("Testing"))
 {
+    using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
 }
@@ -31,3 +33,6 @@ app.MapGroup("/api")
     .WithOpenApi();
 
 app.Run();
+
+// Expose Program for WebApplicationFactory in integration tests.
+public partial class Program { }
