@@ -77,6 +77,8 @@ public sealed class FredStartupValidationTests
             {
                 // Simulates FRED__ApiKey environment variable (double-underscore maps to Fred:ApiKey)
                 ["Fred:ApiKey"]                         = "a-valid-fred-api-key",
+                // Also supply the yfinance sidecar URL so startup validation doesn't throw for that
+                ["YFinance:SidecarBaseUrl"]             = "http://localhost:8000",
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test",
             })
             .Build();

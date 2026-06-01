@@ -54,6 +54,8 @@ services:
       # Database
       ConnectionStrings__DefaultConnection: >-
         Host=postgres;Database=macrodata;Username=macro;Password=macro
+      # FRED API key — injected from the host environment (set FRED__ApiKey before running)
+      FRED__ApiKey: ${FRED__ApiKey}
       # yfinance sidecar — must point at the sidecar service on the Docker network
       YFINANCE__SidecarBaseUrl: "http://yfinance-sidecar:8000"
       # ASP.NET Core
