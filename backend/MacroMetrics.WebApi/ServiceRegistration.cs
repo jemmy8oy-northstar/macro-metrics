@@ -32,8 +32,20 @@ public static class ServiceRegistration
             client.BaseAddress = new Uri("https://api.ons.gov.uk");
         });
 
-        // FRED fetcher — stub implementation; real HTTP calls wired in a future story
-        services.AddScoped<IFredFetcherService, FredFetcherService>();
+        // Validate that the FRED API key is present before the app starts serving requests.
+        // The key must be supplied via the environment variable FRED__ApiKey (which .NET maps
+        // to the configuration key "Fred:ApiKey"). Failing here prevents silent data gaps.
+        var fredApiKey = configuration["Fred:ApiKey"];
+        if (string.IsNullOrWhiteSpace(fredApiKey))
+            throw new InvalidOperationException(
+                "FRED API key is missing. Supply the 'Fred:ApiKey' configuration key " +
+                "(environment variable FRED__ApiKey).");
+
+        // FRED fetcher — typed HTTP client targeting the FRED REST API
+        services.AddHttpClient<IFredFetcherService, FredFetcherService>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.stlouisfed.org");
+        });
 
         // Validate that the yfinance sidecar base URL is present before the app starts serving
         // requests. The URL must be supplied via the environment variable

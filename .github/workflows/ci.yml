@@ -36,6 +36,7 @@ jobs:
         run: dotnet build backend/MacroMetrics.slnx --no-restore --configuration Release
 
       - name: Run tests
+        env:           FRED__ApiKey: ${{ secrets.FREDAPIKEY }}
         run: >
           dotnet test backend/MacroMetrics.slnx
           --no-build
@@ -92,6 +93,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build & start services
+        env:           FRED__ApiKey: ${{ secrets.FREDAPIKEY }}
         run: docker compose -f docker-compose.e2e.yml up --build -d
 
       - name: Wait for sidecar to be healthy

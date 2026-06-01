@@ -23,6 +23,7 @@
     <ProjectReference Include="../MacroMetrics.Services/MacroMetrics.Services.csproj" />
     <ProjectReference Include="../MacroMetrics.Abstractions/MacroMetrics.Abstractions.csproj" />
     <ProjectReference Include="../MacroMetrics.DataModels/MacroMetrics.DataModels.csproj" />
+    <ProjectReference Include="../MacroMetrics.WebApi/MacroMetrics.WebApi.csproj" />
   </ItemGroup>
 
   <!-- Copy shared test fixtures from the repo root test-assets directory so they
