@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e 
+set -e
 
 # --- Configuration ---
 REGION="LHR"
@@ -7,15 +7,17 @@ REGISTRY_NAMESPACE="your-namespace"       # Your OCI/registry namespace
 COMPARTMENT_ID="your-compartment-id"      # Your OCI Compartment ID
 
 # APP_NAME must match 'fullnameOverride' in helm/values.yaml
-# Deployment names will be: {APP_NAME}-frontend and {APP_NAME}-backend
+# Deployment names will be: {APP_NAME}-frontend, {APP_NAME}-backend and {APP_NAME}-yfinance-sidecar
 APP_NAME="your-app"
 KUBERNETES_NAMESPACE="your-app"
 
 FRONTEND_REPO="${APP_NAME}"
 BACKEND_REPO="${APP_NAME}-backend"
+SIDECAR_REPO="${APP_NAME}-yfinance-sidecar"
 
 KUBERNETES_DEPLOYMENT_FRONTEND="${APP_NAME}-frontend"
 KUBERNETES_DEPLOYMENT_BACKEND="${APP_NAME}-backend"
+KUBERNETES_DEPLOYMENT_SIDECAR="${APP_NAME}-yfinance-sidecar"
 
 # 1. Checking deployment status
 echo "⚡️ Checking deployment status..."
@@ -31,7 +33,7 @@ echo "🏗️  Building ARM64 Docker images..."
 purge_repo() {
     local REPO=$1
     echo "🧹 Purging artifacts in $REPO created BEFORE version $TAG..."
-    
+
     # Verify the newest image exists to get its timestamp (safety check)
     local TARGET_TIME=$(oci artifacts container image list \
         --compartment-id $COMPARTMENT_ID \
@@ -42,7 +44,7 @@ purge_repo() {
     if [ -n "$TARGET_TIME" ] && [ "$TARGET_TIME" != "None" ]; then
         # Just grab the first 16 characters (2026-02-02T17:50) for the safety zone
         local BUFFER_TIME=$(echo "$TARGET_TIME" | cut -c 1-16)
-        
+
         echo "🛡️  Safety buffer for $REPO (Minute-level): $BUFFER_TIME"
 
         local OLD_IMAGE_IDS=$(oci artifacts container image list \
@@ -68,8 +70,8 @@ purge_repo() {
 echo "🎨 Building Frontend..."
 docker buildx build \
     --platform linux/arm64 \
-    -t $REGION.ocir.io/$NAMESPACE/$FRONTEND_REPO:$TAG \
-    -t $REGION.ocir.io/$NAMESPACE/$FRONTEND_REPO:latest \
+    -t $REGION.ocir.io/$REGISTRY_NAMESPACE/$FRONTEND_REPO:$TAG \
+    -t $REGION.ocir.io/$REGISTRY_NAMESPACE/$FRONTEND_REPO:latest \
     --push frontend/
 
 purge_repo $FRONTEND_REPO
@@ -78,13 +80,24 @@ purge_repo $FRONTEND_REPO
 echo "⚙️  Building Backend..."
 docker buildx build \
     --platform linux/arm64 \
-    -t $REGION.ocir.io/$NAMESPACE/$BACKEND_REPO:$TAG \
-    -t $REGION.ocir.io/$NAMESPACE/$BACKEND_REPO:latest \
+    -t $REGION.ocir.io/$REGISTRY_NAMESPACE/$BACKEND_REPO:$TAG \
+    -t $REGION.ocir.io/$REGISTRY_NAMESPACE/$BACKEND_REPO:latest \
     --push backend/
 
 purge_repo $BACKEND_REPO
+
+# YFinance Sidecar
+echo "🐍 Building YFinance Sidecar..."
+docker buildx build \
+    --platform linux/arm64 \
+    -t $REGION.ocir.io/$REGISTRY_NAMESPACE/$SIDECAR_REPO:$TAG \
+    -t $REGION.ocir.io/$REGISTRY_NAMESPACE/$SIDECAR_REPO:latest \
+    --push sidecar/
+
+purge_repo $SIDECAR_REPO
 
 # 5. Done
 echo "✅ Success! Version $TAG is live. Restarting the deployments..."
 kubectl rollout restart deploy $KUBERNETES_DEPLOYMENT_FRONTEND -n $KUBERNETES_NAMESPACE
 kubectl rollout restart deploy $KUBERNETES_DEPLOYMENT_BACKEND -n $KUBERNETES_NAMESPACE
+kubectl rollout restart deploy $KUBERNETES_DEPLOYMENT_SIDECAR -n $KUBERNETES_NAMESPACE

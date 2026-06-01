@@ -26,4 +26,12 @@
     <ProjectReference Include="../MacroMetrics.WebApi/MacroMetrics.WebApi.csproj" />
   </ItemGroup>
 
+  <!-- Copy shared test fixtures from the repo root test-assets directory so they
+       are available relative to the test output directory at runtime. -->
+  <ItemGroup>
+    <Content Include="..\..\test-assets\yfinance\*.json"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="TestFixtures\yfinance\%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

@@ -47,8 +47,21 @@ public static class ServiceRegistration
             client.BaseAddress = new Uri("https://api.stlouisfed.org");
         });
 
-        // YFinance fetcher — stub implementation; real HTTP calls wired in a future story
-        services.AddScoped<IYFinanceFetcherService, YFinanceFetcherService>();
+        // Validate that the yfinance sidecar base URL is present before the app starts serving
+        // requests. The URL must be supplied via the environment variable
+        // YFINANCE__SidecarBaseUrl (which .NET maps to the configuration key
+        // "YFinance:SidecarBaseUrl"). Failing here prevents silent data gaps at runtime.
+        var yFinanceSidecarBaseUrl = configuration["YFinance:SidecarBaseUrl"];
+        if (string.IsNullOrWhiteSpace(yFinanceSidecarBaseUrl))
+            throw new InvalidOperationException(
+                "yfinance sidecar base URL is missing. Supply the 'YFinance:SidecarBaseUrl' " +
+                "configuration key (environment variable YFINANCE__SidecarBaseUrl).");
+
+        // YFinance fetcher — typed HTTP client targeting the Python yfinance sidecar
+        services.AddHttpClient<IYFinanceFetcherService, YFinanceFetcherService>(client =>
+        {
+            client.BaseAddress = new Uri(yFinanceSidecarBaseUrl);
+        });
 
         // Orchestrator — routes each metric to its correct fetcher by source
         services.AddScoped<IMetricSeriesOrchestrator, MetricSeriesOrchestrator>();
