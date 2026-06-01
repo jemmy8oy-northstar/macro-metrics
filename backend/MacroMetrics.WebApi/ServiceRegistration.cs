@@ -20,6 +20,10 @@ public static class ServiceRegistration
             options.UseNpgsql(connectionString, b => b.MigrationsAssembly("MacroMetrics.Database")));
 
         services.AddAutoMapper(cfg => cfg.AddMaps(AppDomain.CurrentDomain.GetAssemblies()));
+
+        // In-memory cache — used by MetricSeriesOrchestrator to cache normalised series for 1 hour
+        services.AddMemoryCache();
+
         services.AddScoped<IStatusService, StatusService>();
         services.AddSingleton<IMetricCatalogueService, MetricCatalogueService>();
         services.AddScoped<IMetricSeriesService, MetricSeriesService>();

@@ -1,12 +1,13 @@
 using MacroMetrics.Abstractions.DataModels;
 using MacroMetrics.Abstractions.Services.Fetchers;
 using MacroMetrics.Services.Metrics;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace MacroMetrics.Services.Tests.Orchestrator;
 
 
 /// <summary>
-/// BDD-aligned tests derived from Issue #53 (US-B12).
+/// BDD-aligned tests derived from Issue #53 (US-B12) and Issue #56 (US-B15).
 ///
 /// Scenario: UK metric routes to ONS fetcher
 ///   Given real fetcher implementations are wired via DI
@@ -14,6 +15,18 @@ namespace MacroMetrics.Services.Tests.Orchestrator;
 ///   Then IOnsFetcherService.FetchRawAsync is invoked
 ///   And IFredFetcherService.FetchRawAsync is not invoked
 ///   And IYFinanceFetcherService.FetchRawAsync is not invoked
+///
+/// Scenario: Cache hit on second request (US-B15)
+///   Given GET /api/metrics/gold has already been called once and the result is cached
+///   When GET /api/metrics/gold is called a second time within the same hour
+///   Then YFinanceFetcherService.FetchRawAsync is not called again
+///   And the response is served from the in-memory cache
+///
+/// Scenario: Cache miss triggers a fresh fetch (US-B15)
+///   Given no cached entry exists for metric "oil"
+///   When GET /api/metrics/oil is called
+///   Then YFinanceFetcherService.FetchRawAsync is called exactly once
+///   And the result is stored in the cache with a 1-hour TTL
 /// </summary>
 public class MetricSeriesOrchestratorTests
 {
@@ -23,44 +36,48 @@ public class MetricSeriesOrchestratorTests
 
     private sealed class SpyOnsFetcher : IOnsFetcherService
     {
-        public bool WasCalled { get; private set; }
+        public bool WasCalled  => CallCount > 0;
+        public int  CallCount  { get; private set; }
 
         public Task<IReadOnlyList<IMetricPoint>> FetchRawAsync(string metricId)
         {
-            WasCalled = true;
+            CallCount++;
             return Task.FromResult<IReadOnlyList<IMetricPoint>>(Array.Empty<IMetricPoint>());
         }
     }
 
     private sealed class SpyFredFetcher : IFredFetcherService
     {
-        public bool WasCalled { get; private set; }
+        public bool WasCalled  => CallCount > 0;
+        public int  CallCount  { get; private set; }
 
         public Task<IReadOnlyList<IMetricPoint>> FetchRawAsync(string metricId)
         {
-            WasCalled = true;
+            CallCount++;
             return Task.FromResult<IReadOnlyList<IMetricPoint>>(Array.Empty<IMetricPoint>());
         }
     }
 
     private sealed class SpyYFinanceFetcher : IYFinanceFetcherService
     {
-        public bool WasCalled { get; private set; }
+        public bool WasCalled  => CallCount > 0;
+        public int  CallCount  { get; private set; }
 
         public Task<IReadOnlyList<IMetricPoint>> FetchRawAsync(string metricId)
         {
-            WasCalled = true;
+            CallCount++;
             return Task.FromResult<IReadOnlyList<IMetricPoint>>(Array.Empty<IMetricPoint>());
         }
     }
 
     private sealed class SpyShillerFetcher : IShillerFetcherService
     {
-        public bool WasCalled { get; private set; }
+        public bool WasCalled  => CallCount > 0;
+        public int  CallCount  { get; private set; }
 
         public Task<IReadOnlyList<IMetricPoint>> FetchRawAsync(string metricId)
         {
-            WasCalled = true;
+            CallCount++;
             return Task.FromResult<IReadOnlyList<IMetricPoint>>(Array.Empty<IMetricPoint>());
         }
     }
@@ -70,14 +87,15 @@ public class MetricSeriesOrchestratorTests
     // ---------------------------------------------------------------------------
 
     private static (MetricSeriesOrchestrator sut, SpyOnsFetcher ons, SpyFredFetcher fred, SpyYFinanceFetcher yf, SpyShillerFetcher shiller)
-        BuildSut()
+        BuildSut(IMemoryCache? cache = null)
     {
         var catalogue = new MetricCatalogueService();
         var ons       = new SpyOnsFetcher();
         var fred      = new SpyFredFetcher();
         var yf        = new SpyYFinanceFetcher();
         var shiller   = new SpyShillerFetcher();
-        var sut       = new MetricSeriesOrchestrator(catalogue, ons, fred, yf, shiller);
+        var memCache  = cache ?? new MemoryCache(new MemoryCacheOptions());
+        var sut       = new MetricSeriesOrchestrator(catalogue, ons, fred, yf, shiller, memCache);
         return (sut, ons, fred, yf, shiller);
     }
 
@@ -255,5 +273,70 @@ public class MetricSeriesOrchestratorTests
         var result = await sut.GetSeriesAsync("not-a-real-metric");
 
         Assert.Null(result);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Caching behaviour (US-B15)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Scenario: Cache hit on second request
+    ///   Given GET /api/metrics/gold has already been called once and the result is cached
+    ///   When GET /api/metrics/gold is called a second time within the same hour
+    ///   Then YFinanceFetcherService.FetchRawAsync is not called again
+    ///   And the response is served from the in-memory cache
+    ///   And the response status is 200
+    /// </summary>
+    [Fact]
+    public async Task GetSeriesAsync_SecondCallForSameMetric_ServedFromCache_FetcherNotCalledAgain()
+    {
+        var (sut, _, _, yf, _) = BuildSut();
+
+        // First call — populates the cache
+        var firstResult  = await sut.GetSeriesAsync("gold");
+
+        // Second call — should be served from cache
+        var secondResult = await sut.GetSeriesAsync("gold");
+
+        Assert.True(yf.CallCount == 1,
+            "YFinanceFetcherService.FetchRawAsync should be called exactly once; the second response must come from cache.");
+        Assert.NotNull(secondResult);
+        Assert.Same(firstResult, secondResult);
+    }
+
+    /// <summary>
+    /// Scenario: Cache miss triggers a fresh fetch
+    ///   Given no cached entry exists for metric "oil"
+    ///   When GET /api/metrics/oil is called
+    ///   Then YFinanceFetcherService.FetchRawAsync is called exactly once
+    ///   And the result is stored in the cache with a 1-hour TTL
+    /// </summary>
+    [Fact]
+    public async Task GetSeriesAsync_CacheMiss_FetcherCalledOnce_ResultStoredInCache()
+    {
+        var realCache          = new MemoryCache(new MemoryCacheOptions());
+        var (sut, _, _, yf, _) = BuildSut(realCache);
+
+        // Act — first (and only) request; no prior cache entry
+        var result = await sut.GetSeriesAsync("oil");
+
+        // Fetcher was called exactly once
+        Assert.True(yf.CallCount == 1,
+            "YFinanceFetcherService.FetchRawAsync should be called exactly once on a cache miss.");
+
+        // Result is in the cache with the expected 1-hour TTL key
+        var found = realCache.TryGetValue("metric-series:oil", out _);
+        Assert.True(found, "The result should be stored in IMemoryCache after a cache miss.");
+        Assert.NotNull(result);
+    }
+
+    /// <summary>
+    /// Verifies that the TTL constant on the orchestrator is exactly 1 hour,
+    /// matching the requirement in US-B15.
+    /// </summary>
+    [Fact]
+    public void CacheTtl_IsOneHour()
+    {
+        Assert.Equal(TimeSpan.FromHours(1), MetricSeriesOrchestrator.CacheTtl);
     }
 }
