@@ -17,5 +17,8 @@ public enum MetricSource
     OnsAwe,
 
     [Description("ONS")]
-    Ons
+    Ons,
+
+    [Description("Shiller")]
+    Shiller
 }

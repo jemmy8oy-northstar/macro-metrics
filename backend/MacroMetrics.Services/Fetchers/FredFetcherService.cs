@@ -11,7 +11,7 @@ namespace MacroMetrics.Services.Fetchers;
 
 /// <summary>
 /// Fetches raw time-series data from the FRED (Federal Reserve Economic Data) REST API.
-/// Supports the five US macroeconomic metrics: us-house-prices, us-wages, us-cpi, cape,
+/// Supports the four US macroeconomic metrics: us-house-prices, us-wages, us-cpi,
 /// and us-10yr-treasury.
 /// </summary>
 /// <remarks>
@@ -20,6 +20,10 @@ namespace MacroMetrics.Services.Fetchers;
 /// .NET hierarchical separator). A missing key causes a startup validation failure in
 /// <see cref="MacroMetrics.WebApi.ServiceRegistration"/>, so the key is guaranteed
 /// to be present when this service is constructed.
+/// <para>
+/// Note: The Shiller CAPE ratio (<c>cape</c>) is <em>not</em> a FRED-hosted series.
+/// It is served by <see cref="ShillerFetcherService"/> instead.
+/// </para>
 /// </remarks>
 public sealed class FredFetcherService : IFredFetcherService
 {
@@ -29,21 +33,12 @@ public sealed class FredFetcherService : IFredFetcherService
     /// <summary>
     /// Maps each supported metric ID to its FRED series identifier.
     /// </summary>
-    /// <remarks>
-    /// <b>Known issue — "cape" series:</b> The Shiller CAPE ratio is <em>not</em> published
-    /// by the St. Louis Fed; the FRED REST API returns HTTP 400 for series ID <c>"CAPE"</c>.
-    /// The authoritative source is Robert Shiller's Yale dataset. Until a dedicated
-    /// non-FRED fetcher is implemented for this metric, any live call for <c>"cape"</c>
-    /// via this service will result in a <see cref="MacroMetrics.Abstractions.Exceptions.FetcherException"/>.
-    /// See: https://github.com/jemmy8oy/macro-metrics/issues — track as a follow-up story.
-    /// </remarks>
     private static readonly Dictionary<string, string> SeriesIds =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["us-house-prices"]  = "CSUSHPINSA",
             ["us-wages"]         = "CES0500000003",
             ["us-cpi"]           = "CPIAUCSL",
-            ["cape"]             = "CAPE",       // TODO: FRED returns HTTP 400 — series does not exist on FRED
             ["us-10yr-treasury"] = "DGS10",
         };
 
