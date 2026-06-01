@@ -106,7 +106,6 @@ public sealed class FredFetcherServiceIntegrationTests
     [InlineData("us-house-prices",  "CSUSHPINSA")]
     [InlineData("us-wages",         "CES0500000003")]
     [InlineData("us-cpi",           "CPIAUCSL")]
-    [InlineData("cape",             "CAPE")]
     [InlineData("us-10yr-treasury", "DGS10")]
     public async Task FetchRawAsync_DiWired_UsesCorrectFredSeriesId(
         string metricId, string expectedSeriesId)

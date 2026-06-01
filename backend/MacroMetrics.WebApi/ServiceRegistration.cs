@@ -32,6 +32,14 @@ public static class ServiceRegistration
             client.BaseAddress = new Uri("https://api.ons.gov.uk");
         });
 
+        // Shiller fetcher — typed HTTP client targeting the multpl.com JSON API (no API key required)
+        // Source: https://www.multpl.com/shiller-pe/table/by-month.json
+        // This is the correct authoritative source for the Shiller CAPE ratio; FRED does not host this series.
+        services.AddHttpClient<IShillerFetcherService, ShillerFetcherService>(client =>
+        {
+            client.BaseAddress = new Uri("https://www.multpl.com");
+        });
+
         // Validate that the FRED API key is present before the app starts serving requests.
         // The key must be supplied via the environment variable FRED__ApiKey (which .NET maps
         // to the configuration key "Fred:ApiKey"). Failing here prevents silent data gaps.

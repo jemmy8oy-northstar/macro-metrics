@@ -93,12 +93,13 @@ public class MetricCatalogueService : IMetricCatalogueService
             IsIndicatorOnly = false,
             EarliestDate = new DateOnly(1947, 1, 31)
         },
+        // Shiller metrics
         new MetricMetadata
         {
             Id = MetricId.Cape,
             Label = "Shiller CAPE Ratio",
             Unit = MetricUnit.Ratio,
-            Source = MetricSource.Fred,
+            Source = MetricSource.Shiller,
             IsIndicatorOnly = true,
             EarliestDate = new DateOnly(1881, 1, 31)
         },

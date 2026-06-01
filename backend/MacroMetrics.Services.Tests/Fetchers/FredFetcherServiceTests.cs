@@ -45,7 +45,6 @@ public sealed class FredFetcherServiceTests
     [InlineData("us-house-prices",  "CSUSHPINSA")]
     [InlineData("us-wages",         "CES0500000003")]
     [InlineData("us-cpi",           "CPIAUCSL")]
-    [InlineData("cape",             "CAPE")]
     [InlineData("us-10yr-treasury", "DGS10")]
     public async Task FetchRawAsync_KnownMetric_UsesCorrectFredSeriesId(
         string metricId, string expectedSeriesId)
@@ -171,6 +170,21 @@ public sealed class FredFetcherServiceTests
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => sut.FetchRawAsync("unknown-metric"));
+    }
+
+    /// <summary>
+    /// Verifies that FRED no longer handles the "cape" metric — it was moved to
+    /// <see cref="ShillerFetcherService"/> because the FRED API returns HTTP 400
+    /// for series ID "CAPE" (the series is not hosted by the St. Louis Fed).
+    /// </summary>
+    [Fact]
+    public async Task FetchRawAsync_CapeMetricId_ThrowsArgumentException()
+    {
+        var handler = new FakeHttpMessageHandler(_ => OkJson("{}"));
+        var sut = BuildSut(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => sut.FetchRawAsync("cape"));
     }
 
     // ── Missing API key ───────────────────────────────────────────────────
