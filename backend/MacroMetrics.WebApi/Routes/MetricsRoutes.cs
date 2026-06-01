@@ -1,5 +1,6 @@
 using MacroMetrics.Abstractions.Extensions;
 using MacroMetrics.Abstractions.Services.Metrics;
+using MacroMetrics.WebApi.Filters;
 
 namespace MacroMetrics.WebApi.Routes;
 
@@ -7,7 +8,8 @@ public static class MetricsRoutes
 {
     public static RouteGroupBuilder MapMetricsRoutes(this RouteGroupBuilder parentGroup)
     {
-        var group = parentGroup.MapGroup("/metrics");
+        var group = parentGroup.MapGroup("/metrics")
+            .AddEndpointFilter<CacheControlFilter>();
 
         group.MapGet("", (IMetricCatalogueService catalogueService) =>
         {
