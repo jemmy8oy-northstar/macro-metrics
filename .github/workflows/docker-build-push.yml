@@ -9,6 +9,7 @@ on:
 env:
   FRONTEND_IMAGE: macro-metrics-frontend
   BACKEND_IMAGE: macro-metrics-backend
+  SIDECAR_IMAGE: macro-metrics-sidecar
 
 jobs:
   build-and-push:
@@ -64,3 +65,16 @@ jobs:
             ${{ vars.OCIR_REGISTRY }}/${{ vars.OCIR_NAMESPACE }}/${{ env.BACKEND_IMAGE }}:${{ steps.gitversion.outputs.semVer }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and push Sidecar
+        uses: docker/build-push-action@v5
+        with:
+          context: ./sidecar
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ vars.OCIR_REGISTRY }}/${{ vars.OCIR_NAMESPACE }}/${{ env.SIDECAR_IMAGE }}:latest
+            ${{ vars.OCIR_REGISTRY }}/${{ vars.OCIR_NAMESPACE }}/${{ env.SIDECAR_IMAGE }}:${{ steps.gitversion.outputs.semVer }}
+          cache-from: type=gha,scope=sidecar
+          cache-to: type=gha,mode=max,scope=sidecar
