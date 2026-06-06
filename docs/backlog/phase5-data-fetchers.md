@@ -23,4 +23,7 @@ Each fetcher returns data in a common internal format for downstream normalisati
 _None — backend features are not designed in Phase 2. Design is deferred to Phase 5 (`[5a]`)._
 
 ## Stories
-_(to be added after UI/UX sign-off)_
+
+- [#53 — US-B12: UK macroeconomic metrics fetched from ONS](https://github.com/jemmy8oy/macro-metrics/issues/53)
+- [#54 — US-B13: US macroeconomic metrics fetched from FRED](https://github.com/jemmy8oy/macro-metrics/issues/54)
+- [#55 — US-B14: Market and equity metrics fetched via yfinance Python sidecar](https://github.com/jemmy8oy/macro-metrics/issues/55)

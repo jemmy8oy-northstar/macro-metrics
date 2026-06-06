@@ -37,6 +37,8 @@ apps:
           secretKeyRef:
             name: your-app-secrets   # Name of your K8s secret
             key: DATABASE_URL
+      - name: YFINANCE__SidecarBaseUrl
+        value: "http://your-app-yfinance-sidecar:8000"   # ClusterIP service for the sidecar
     resources: {}
     nodeSelector: {}
     tolerations: []
@@ -55,6 +57,22 @@ apps:
     ingress:
       path: /
       pathType: Prefix
+    resources: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+
+  - name: yfinance-sidecar
+    image:
+      repository: lhr.ocir.io/your-namespace/your-app-yfinance-sidecar   # Update for your registry
+      tag: latest
+      pullPolicy: Always
+    containerPort: 8000
+    replicas: 1
+    service:
+      port: 8000
+      targetPort: 8000
+    # No ingress — internal ClusterIP service only; accessed by the backend via YFINANCE__SidecarBaseUrl
     resources: {}
     nodeSelector: {}
     tolerations: []

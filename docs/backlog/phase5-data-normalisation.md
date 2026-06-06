@@ -17,4 +17,6 @@ Raw data arrives at different frequencies (daily, monthly, quarterly) and in dif
 _None — backend features are not designed in Phase 2. Design is deferred to Phase 5 (`[5a]`)._
 
 ## Stories
-_(to be added after UI/UX sign-off)_
+
+- [#51 — US-B10: Monthly end-of-month alignment for all source cadences](https://github.com/jemmy8oy/macro-metrics/issues/51)
+- [#52 — US-B11: Missing months are forward-filled](https://github.com/jemmy8oy/macro-metrics/issues/52)

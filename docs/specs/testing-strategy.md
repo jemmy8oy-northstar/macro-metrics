@@ -12,7 +12,7 @@ For when tests are written relative to the development workflow, see `docs/specs
 ```
          [ Frontend: Vitest + RTL ]     ← component behaviour
         [  Unit: xUnit + Moq      ]     ← single service in isolation
-     [ In-Process Integration     ]     ← real services wired, I/O mocked
+     [ In-Process Integration     ]     ← API layer only: DI-wired HTTP services, HTTP stubbed
 ```
 
 No test database. No containers. No infrastructure dependencies.
@@ -74,60 +74,76 @@ public class MonthlyReportOrchestratorTests
 
 ## In-Process Integration Tests
 
-These tests wire **real service implementations** together via DI, mocking only at the external I/O boundary (database, email gateway, HTTP clients). No test database is needed.
+In-process integration tests are used **exclusively for API layer services** — services that wrap external HTTP APIs (e.g. ONS, yfinance). They are not used for orchestration logic; orchestration is covered by unit tests with mocked dependencies.
 
-This is distinct from unit tests (where all dependencies are mocked) and from E2E tests (where the full stack including infrastructure is real). The goal is to verify that the orchestration is correct when real implementations are plugged in — catching bugs that mocks hide, such as mapping errors or interface contract mismatches between services.
+These tests wire the **real service implementation** through the production DI registration (`AddHttpClient<IInterface, Implementation>`), stubbing only the HTTP transport via a fake `HttpMessageHandler`. No real network calls are made.
+
+This is distinct from unit tests (which instantiate the service directly with `new`) because they verify the **DI wiring** is correct — i.e. that `AddHttpClient` resolves the expected concrete type — as well as the full HTTP → deserialise → map pipeline when resolved from the container.
 
 ```csharp
-public class MonthlyReportIntegrationTests
+public class OnsFetcherServiceIntegrationTests
 {
-    [Fact]
-    public async Task ProcessMonthlyReport_CallsEmailGatewayWithCorrectPayload()
+    private static ServiceProvider BuildProvider(HttpMessageHandler handler)
     {
-        // Real implementations, DI-wired
-        var emailGateway = new Mock<IEmailGateway>(); // only the external boundary is mocked
+        var services = new ServiceCollection();
+        services.AddHttpClient<IOnsFetcherService, OnsFetcherService>()
+                .ConfigurePrimaryHttpMessageHandler(() => handler);
+        return services.BuildServiceProvider();
+    }
 
-        var services = new ServiceCollection()
-            .AddScoped<IReportDataService, ReportDataService>()
-            .AddScoped<IContactsService, ContactsService>()
-            .AddScoped<IReportGenerator, ReportGenerator>()
-            .AddScoped<IEmailBuilder, ReportEmailBuilder>()
-            .AddSingleton(emailGateway.Object)
-            .BuildServiceProvider();
+    [Fact]
+    public async Task FetchRawAsync_DiWired_ParsesMonthsAndReturnsCorrectPoints()
+    {
+        // Arrange — stub HTTP boundary only
+        var json = """{"months":[{"date":"2024 JAN","value":"285.3"},{"date":"2024 FEB","value":"287.1"}]}""";
+        using var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, json);
+        await using var provider = BuildProvider(handler);
 
-        var orchestrator = services.GetRequiredService<MonthlyReportOrchestrator>();
+        var sut = provider.GetRequiredService<IOnsFetcherService>();
 
-        await orchestrator.ProcessMonthlyReportAsync(TestData.OrgId);
+        // Act
+        var result = (await sut.FetchRawAsync("uk-house-prices")).ToList();
 
-        emailGateway.Verify(x => x.SendAsync(It.Is<EmailPayload>(e =>
-            e.Recipients.Count == 1 &&
-            e.Subject.Contains("Monthly Report")
-        )), Times.Once);
+        // Assert
+        Assert.Equal(2, result.Count);
+        Assert.Equal(new DateOnly(2024, 1, 1), result[0].Date);
+        Assert.Equal(285.3m, result[0].Value);
     }
 }
 ```
 
 **What these tests catch:**
-- Bugs in the orchestration that mocks hide (e.g. arguments passed in wrong order)
-- Mapping errors between services (e.g. a field used by one service not populated by another)
-- Regression: once passing, these protect against breaking changes to the call chain
+- DI wiring is correct — `AddHttpClient<IInterface, Implementation>` resolves the expected concrete type
+- URL routing — the service calls the correct API path for each metric ID
+- Response parsing — the external JSON/XML shape is correctly deserialised to domain types
+- Error propagation — non-200 HTTP responses produce the correct typed exception
 
 **What these tests do not cover:**
 - Individual service logic (that's unit tests)
+- Orchestration between multiple services (use unit tests with mocked dependencies)
 - Database persistence (out of scope — no test DB)
 - UI behaviour (that's frontend tests)
-- External APIs (stub at the gateway boundary)
+- Real HTTP network calls (stub at the `HttpMessageHandler` boundary — no live API calls in CI)
+
+**Rule: when to use integration tests vs unit tests**
+
+| Scenario | Test type |
+|---|---|
+| Service wraps an external HTTP API (fetcher, client) | **Integration test** (DI-wired, HTTP stubbed) |
+| Service orchestrates other services | **Unit test** (all deps mocked) |
+| Service contains pure calculation/mapping logic | **Unit test** |
 
 ### Scenario-First, Implement Last
 
-In-process integration test **scenarios** are defined during architecture design (SDD Phase 5) — before any implementation. The scenarios capture what end-to-end workflows must succeed. The actual test implementation is deferred to the end of Phase 6, once the full service dependency tree is built and you know exactly what needs to be wired.
+In-process integration test **scenarios** for API layer services are defined during architecture design (SDD Phase 5) — before any implementation. The scenarios capture what the DI-wired HTTP pipeline must do. The actual test implementation is deferred to the end of Phase 6, once the service and its DI registration are in place.
 
 **Scenario (defined in Phase 5):**
 ```
-Given an organisation with active subscribers
-When ProcessMonthlyReportAsync is called
-Then the email gateway receives a correctly formatted report email
-And the email is addressed to all active subscribers
+Given the ONS fetcher service is resolved from the DI container
+When FetchRawAsync("uk-house-prices") is called
+Then the service calls the correct ONS API path
+And the stubbed JSON "months" array is parsed into RawDataPoint records with correct dates and values
+And a non-200 HTTP response propagates a FetcherException
 ```
 
 **Test implementation (end of Phase 6):** — as shown above.
@@ -137,7 +153,8 @@ And the email is addressed to all active subscribers
 ## Top-Down TDD Flow
 
 ```
-Phase 5:  Define in-process integration test scenarios (what, not how)
+Phase 5:  Define integration test scenarios for API layer services (what, not how)
+          Define unit test scenarios for orchestrators and logic services
 Phase 6:  ┌─ Write unit test for the orchestrator (all deps mocked)
           │  Implement orchestrator → tests pass
           │
@@ -146,15 +163,15 @@ Phase 6:  ┌─ Write unit test for the orchestrator (all deps mocked)
           │
           ├─ Continue down to leaves (data services, builders, etc.)
           │
-          └─ Implement in-process integration tests
-             Wire real services, mock only external I/O → tests pass
+          └─ Implement in-process integration tests for HTTP API layer services
+             Wire via AddHttpClient DI, stub HttpMessageHandler → tests pass
 ```
 
 **Why top-down?**
 - You define the contract at each level before worrying about implementation
 - Orchestrator-level unit tests pass immediately — mocks return expected data, so you get green feedback before any dependent service exists
 - Each level is testable in isolation regardless of what is below it
-- The final in-process integration tests verify the full orchestration and serve as a regression safety net
+- In-process integration tests verify the DI wiring and HTTP pipeline for API layer services and serve as a regression safety net
 
 ---
 
