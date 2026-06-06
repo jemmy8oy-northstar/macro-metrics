@@ -1,0 +1,72 @@
+# docker-compose.e2e.yml
+#
+# End-to-end test stack: PostgreSQL + yfinance sidecar + .NET backend.
+#
+# Usage (local):
+#   docker compose -f docker-compose.e2e.yml up --build          # foreground
+#   docker compose -f docker-compose.e2e.yml up --build -d       # detached
+#   docker compose -f docker-compose.e2e.yml down -v             # teardown + remove volumes
+#
+# Or use the helper script which also runs the health/integration checks:
+#   ./scripts/e2e-test.sh
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: macrodata
+      POSTGRES_USER: macro
+      POSTGRES_PASSWORD: macro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U macro -d macrodata"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # No published port — internal network only.
+
+  # ── yfinance sidecar ───────────────────────────────────────────────────────
+  yfinance-sidecar:
+    build:
+      context: ./sidecar
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"     # exposed so e2e-test.sh can reach it from the host
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ── .NET backend ───────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      yfinance-sidecar:
+        condition: service_healthy
+    ports:
+      - "8080:8080"     # exposed so e2e-test.sh can reach it from the host
+    environment:
+      # Database
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres;Database=macrodata;Username=macro;Password=macro
+      # FRED API key — injected from the host environment (set FRED__ApiKey before running)
+      FRED__ApiKey: ${FRED__ApiKey}
+      # yfinance sidecar — must point at the sidecar service on the Docker network
+      YFINANCE__SidecarBaseUrl: "http://yfinance-sidecar:8000"
+      # ASP.NET Core
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      # Disable HTTPS redirection inside the container (no TLS cert available)
+      ASPNETCORE_HTTPS_PORT: ""
+    healthcheck:
+      # /api/metrics returns the hardcoded catalogue — no DB data required.
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/api/metrics || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s   # allow time for EF migrations on first run

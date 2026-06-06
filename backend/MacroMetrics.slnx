@@ -5,5 +5,6 @@
   <Project Path="MacroMetrics.Database/MacroMetrics.Database.csproj" />
   <Project Path="MacroMetrics.DomainModels/MacroMetrics.DomainModels.csproj" />
   <Project Path="MacroMetrics.EntityModels/MacroMetrics.EntityModels.csproj" />
+  <Project Path="MacroMetrics.Services.Tests/MacroMetrics.Services.Tests.csproj" />
   <Project Path="MacroMetrics.Services/MacroMetrics.Services.csproj" />
 </Solution>
