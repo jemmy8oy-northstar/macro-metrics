@@ -47,11 +47,6 @@ apps:
           secretKeyRef:
             name: macro-metrics-secrets
             key: FRED_API_KEY
-      - name: ConnectionStrings__DefaultConnection
-        valueFrom:
-          secretKeyRef:
-            name: macro-metrics-secrets
-            key: DATABASE_URL
     resources: {}
     nodeSelector: {}
     tolerations: []
