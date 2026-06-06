@@ -14,7 +14,7 @@ ingress:
         - balenthiran.co.uk
       secretName: balenthiran-tls
 
-registryPrefix: "lhr.ocir.io/macro-metrics"
+registryPrefix: "lhr.ocir.io/balenthiran"
 
 apps:
   - name: backend
@@ -32,7 +32,7 @@ apps:
       pathType: Prefix
     env:
       - name: YFINANCE__SidecarBaseUrl
-        value: "http://macro-metrics-sidecar:8000"   # ClusterIP service for the sidecar
+        value: "http://macro-metrics-yfinance-sidecar:8000"   # ClusterIP service for the sidecar
     resources: {}
     nodeSelector: {}
     tolerations: []
