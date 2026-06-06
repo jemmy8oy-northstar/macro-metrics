@@ -1,26 +1,25 @@
 # Controls deployment names: "{fullnameOverride}-frontend" and "{fullnameOverride}-backend"
 # e.g. fullnameOverride: "balenthiran-apeify" -> balenthiran-apeify-frontend, balenthiran-apeify-backend
-fullnameOverride: "your-app"
+fullnameOverride: "macro-metrics"
 
 ingress:
   enabled: true
   className: nginx
   hosts:
-    - host: your-app.co.uk    # Replace with your domain
+    - host: balenthiran.co.uk
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   tls:
     - hosts:
-        - your-app.co.uk      # Replace with your domain
-      secretName: your-app-tls
+        - balenthiran.co.uk
+      secretName: balenthiran-tls
 
-# Registry configuration - replace with your OCI/DockerHub/etc registry prefix
-registryPrefix: "lhr.ocir.io/your-namespace"
+registryPrefix: "lhr.ocir.io/macro-metrics"
 
 apps:
   - name: backend
     image:
-      repository: lhr.ocir.io/your-namespace/your-app-backend   # Update for your registry
+      repository: lhr.ocir.io/balenthiran/macro-metrics-backend
       tag: latest
       pullPolicy: Always
     containerPort: 8080
@@ -32,13 +31,8 @@ apps:
       path: /api
       pathType: Prefix
     env:
-      - name: ConnectionStrings__DefaultConnection
-        valueFrom:
-          secretKeyRef:
-            name: your-app-secrets   # Name of your K8s secret
-            key: DATABASE_URL
       - name: YFINANCE__SidecarBaseUrl
-        value: "http://your-app-yfinance-sidecar:8000"   # ClusterIP service for the sidecar
+        value: "http://macro-metrics-sidecar:8000"   # ClusterIP service for the sidecar
     resources: {}
     nodeSelector: {}
     tolerations: []
@@ -46,7 +40,7 @@ apps:
 
   - name: frontend
     image:
-      repository: lhr.ocir.io/your-namespace/your-app   # Update for your registry
+      repository: lhr.ocir.io/balenthiran/macro-metrics-frontend
       tag: latest
       pullPolicy: Always
     containerPort: 80
@@ -64,7 +58,7 @@ apps:
 
   - name: yfinance-sidecar
     image:
-      repository: lhr.ocir.io/your-namespace/your-app-yfinance-sidecar   # Update for your registry
+      repository: lhr.ocir.io/balenthiran/macro-metrics-sidecar
       tag: latest
       pullPolicy: Always
     containerPort: 8000
