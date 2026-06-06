@@ -1,7 +1,7 @@
 {{/*
 Generate a full name for resources: {release}-{chart}
 */}}
-{{- define "web-app-helm.fullname" -}}
+{{- define "macro-metrics-helm.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else if .Values.nameOverride }}
@@ -14,16 +14,16 @@ Generate a full name for resources: {release}-{chart}
 {{/*
 Chart name
 */}}
-{{- define "web-app-helm.name" -}}
+{{- define "macro-metrics-helm.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "web-app-helm.labels" -}}
+{{- define "macro-metrics-helm.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-app.kubernetes.io/name: {{ include "web-app-helm.name" . }}
+app.kubernetes.io/name: {{ include "macro-metrics-helm.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
