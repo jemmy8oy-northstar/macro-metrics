@@ -14,12 +14,12 @@ ingress:
         - balenthiran.co.uk
       secretName: balenthiran-tls
 
-registryPrefix: "lhr.ocir.io/balenthiran"
+registryPrefix: "lhr.ocir.io/macro-metrics"
 
 apps:
   - name: backend
     image:
-      repository: lhr.ocir.io/balenthiran/macro-metrics-backend
+      repository: lhr.ocir.io/macro-metrics/macro-metrics-backend
       tag: latest
       pullPolicy: Always
     containerPort: 8080
@@ -40,7 +40,7 @@ apps:
 
   - name: frontend
     image:
-      repository: lhr.ocir.io/balenthiran/macro-metrics-frontend
+      repository: lhr.ocir.io/macro-metrics/macro-metrics-frontend
       tag: latest
       pullPolicy: Always
     containerPort: 80
@@ -58,7 +58,7 @@ apps:
 
   - name: yfinance-sidecar
     image:
-      repository: lhr.ocir.io/balenthiran/macro-metrics-sidecar
+      repository: lhr.ocir.io/macro-metrics/macro-metrics-sidecar
       tag: latest
       pullPolicy: Always
     containerPort: 8000
