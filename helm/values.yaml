@@ -16,6 +16,15 @@ ingress:
 
 registryPrefix: "lhr.ocir.io/macro-metrics"
 
+# Image pull secret for the private OCIR registry.
+# Create the secret before deploying:
+#   kubectl create secret docker-registry ocir-secret \
+#     --docker-server=lhr.ocir.io \
+#     --docker-username=<tenancy-namespace>/<oci-username> \
+#     --docker-password=<auth-token>
+imagePullSecrets:
+  - name: ocir-secret
+
 apps:
   - name: backend
     image:
@@ -33,6 +42,16 @@ apps:
     env:
       - name: YFINANCE__SidecarBaseUrl
         value: "http://macro-metrics-yfinance-sidecar:8000"   # ClusterIP service for the sidecar
+      - name: FRED__ApiKey
+        valueFrom:
+          secretKeyRef:
+            name: macro-metrics-secrets
+            key: FRED_API_KEY
+      - name: ConnectionStrings__DefaultConnection
+        valueFrom:
+          secretKeyRef:
+            name: macro-metrics-secrets
+            key: DATABASE_URL
     resources: {}
     nodeSelector: {}
     tolerations: []
