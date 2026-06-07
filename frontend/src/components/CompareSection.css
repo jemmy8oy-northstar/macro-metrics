@@ -1,0 +1,21 @@
+.compare-section__picker { margin-bottom: 2rem; }
+.compare-section__chart-area { min-height: 120px; }
+.compare-section__prompt { color: #94a3b8; font-size: 0.95rem; padding: 3rem 0; text-align: center; margin: 0; }
+.compare-section__skeleton {
+  height: 320px; border-radius: 12px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.05) 75%);
+  background-size: 400px 100%; animation: cmp-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes cmp-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.compare-section__error { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 3rem 0; color: #94a3b8; }
+.compare-section__error button {
+  background: none; border: 1px solid var(--glass-border); color: var(--text-secondary);
+  padding: 0.35rem 0.75rem; border-radius: 6px; cursor: pointer;
+}
+.compare-section__error button:hover { border-color: #6366f1; color: #6366f1; }
+.compare-section__chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.compare-section__chart-header h3 { font-size: 1rem; font-weight: 500; color: var(--text-primary); margin: 0; }
+.compare-section__current { font-size: 1.5rem; font-weight: 600; color: var(--text-primary); }

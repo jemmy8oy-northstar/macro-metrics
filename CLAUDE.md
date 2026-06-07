@@ -50,6 +50,28 @@ A `dotnet new` monorepo template for .NET 10 + React 19 projects. Every new proj
 | `.agents/rules/project.md` | Coding conventions, branch strategy, GitHub workflow rules |
 | `.claude/skills/action-issue/SKILL.md` | How to pick up and implement a GH issue |
 | `.claude/skills/respond-to-pr/SKILL.md` | How to respond to PR review comments |
+| `.claude/skills/pr-readiness/SKILL.md` | Pre-PR checklist — naming, AutoMapper, typed results, architecture |
+
+## Backend Architecture Quick Reference
+
+> Full detail in `docs/specs/backend-architecture.md`. These are the rules needed most often.
+
+### Model Naming
+
+| Type | Naming | Project | Rule |
+|---|---|---|---|
+| Data model | Plain noun | `DataModels/` | What the API returns; implements `I*` from Abstractions |
+| Domain model | `Domain*` | `DomainModels/` | Extends its DataModels counterpart (`DomainRatio : Ratio`) |
+| Entity | `*Entity` | `EntityModels/` | EF Core mapping only |
+| Inbound DTO | `*Request` | `DataModels/` | Only for non-trivial POST/PUT bodies — never for query params |
+| Custom response | `*Response` | `DataModels/` | Only when the route assembles a shape the service does NOT directly return |
+
+### Key Rules
+- **Abstractions** — interfaces only; zero concrete types; no project references to concrete projects
+- **Service interfaces** — always return interfaces (`IRatio`), never concrete types
+- **Route handlers** — named static methods; typed results (`Ok<T>` / `Results<T1,T2>`); map via `IMapper`; no business logic
+- **AutoMapper** — `WebApi/Mapper.cs` for Domain→Data (API boundary); `Services/Mapper.cs` for Entity→Domain (DB boundary)
+- **Always run `.claude/skills/pr-readiness/SKILL.md` before opening a PR**
 
 ## Running Locally
 
@@ -82,3 +104,31 @@ cd backend && dotnet ef database update \
 ```
 
 CI runs on PRs only (`ci.yml`). Image builds are manual (`docker-build-push.yml`, `workflow_dispatch`).
+
+## GitHub Conventions
+
+- **Branch target**: All PRs target `dev`. Never target `main` — `dev` → `main` is a human-only action.
+- **PR assignment**: Every PR the AI raises must be assigned to `jemmy8oy`.
+- **Issue assignment**: Every issue the AI acts on must be assigned to `jemmy8oy`.
+- **Issue linking**: Every PR body must include `Closes #N`. The AI also comments on the issue: *🤖 PR raised: #N — please review when ready.*
+- **Labels**: After pushing changes and commenting on a PR, always apply the `waiting-for-human` label and remove `waiting-for-ai`. Apply `waiting-for-ai` when handing back to the AI (e.g. after raising a review comment).
+
+## [2] Design Issue Template
+
+When creating `[2]` UI/UX design issues (via `[2a]`), use this structure:
+
+```
+Design the <feature name> for <product name>.
+
+**Feature:** `docs/features/<feature-file>.md`
+
+**Open UX questions to resolve:**
+- <question from feature file>
+- <question from feature file>
+
+**Deliverables (in the design PR):**
+- [ ] ASCII mockup for each meaningful page/component state
+- [ ] ASCII mockup for each key interaction state (loading, error, empty)
+- [ ] Mermaid workflow diagram for each key user action
+- [ ] All open UX questions answered
+```

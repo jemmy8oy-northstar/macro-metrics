@@ -1,31 +1,40 @@
-import Hero from '../components/Hero';
-import { useGetStatusQuery } from '../api/generatedApi';
+import { CompareProvider } from "../context/CompareContext";
+import { StickyNav } from "../components/StickyNav";
+import { PresetCard } from "../components/PresetCard";
+import { IndicatorCard } from "../components/IndicatorCard";
+import { CompareSection } from "../components/CompareSection";
+import { PRESETS } from "../data/presets";
+import { INDICATORS } from "../data/indicators";
+import "./Home.css";
 
-const Home = () => {
-  const { data: status, isLoading, isError } = useGetStatusQuery();
-
-  return (
-    <>
-      <Hero />
-      <section className="container" id="status" style={{ paddingTop: '80px' }}>
-        <div className="glass" style={{ padding: '32px', maxWidth: '480px', margin: '0 auto' }}>
-          <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>API Status</h2>
-          {isLoading && <p style={{ color: 'var(--text-secondary)' }}>Connecting...</p>}
-          {isError && <p style={{ color: '#f87171' }}>Could not reach the API. Is the backend running?</p>}
-          {status !== undefined && (
-            <pre style={{
-              color: 'var(--text-secondary)',
-              fontSize: '0.85rem',
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'monospace'
-            }}>
-              {JSON.stringify(status, null, 2)}
-            </pre>
-          )}
+const Home = () => (
+  <CompareProvider>
+    <StickyNav />
+    <main className="home">
+      <section className="home__section" id="presets">
+        <h2 className="home__section-title">Preset Ratios</h2>
+        <div className="home__preset-grid">
+          {PRESETS.map((preset) => (
+            <PresetCard key={preset.id} preset={preset} />
+          ))}
         </div>
       </section>
-    </>
-  );
-};
+
+      <section className="home__section" id="compare">
+        <h2 className="home__section-title">Custom Comparison</h2>
+        <CompareSection />
+      </section>
+
+      <section className="home__section" id="indicators">
+        <h2 className="home__section-title">Macro Indicators</h2>
+        <div className="home__indicators-row">
+          {INDICATORS.map((ind) => (
+            <IndicatorCard key={ind.id} indicator={ind} />
+          ))}
+        </div>
+      </section>
+    </main>
+  </CompareProvider>
+);
 
 export default Home;

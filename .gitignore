@@ -21,3 +21,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.iml
+
+# Local Playwright screenshots (evidence committed to PRs, not the repo)
+screenshots/

@@ -86,24 +86,61 @@ This distinction makes it immediately clear whether an issue is orchestrating a 
 | [2a] | Triggered once [1c] is merged. AI scans the spec for features, creates one `[2] Feature name design` issue per feature. → [2a] closed |
 | [2] *per feature* | AI raises a **design PR** with ASCII mockups and Mermaid workflow diagrams. Developer reviews → merges or requests changes → issue closed on merge |
 
+**[2] issue structure — what the AI puts in each design issue body:**
+
+```
+Design the <feature name> for <product name>.
+
+**Feature:** `docs/features/<feature-file>.md`
+
+**Open UX questions to resolve:**
+- <question from feature file>
+- <question from feature file>
+
+**Deliverables (in the design PR):**
+- [ ] ASCII mockup for each meaningful page/component state
+- [ ] ASCII mockup for each key interaction state (loading, error, empty)
+- [ ] Mermaid workflow diagram for each key user action
+- [ ] All open UX questions answered
+```
+
+**[2] design PR — what the AI produces:**
+- One ASCII mockup per page state and interaction state
+- One Mermaid sequence/flowchart diagram per key user action (shows what the system does, what data flows, what side effects occur)
+- Answers to all open UX questions listed in the issue
+- Sign-off checklist in the PR body for the developer to review before merge
+
 ---
 
 ### Phase 3 — Frontend User Stories & Issues
 
+> **BDD (Behaviour-Driven Development)** — a format for writing requirements as human-readable scenarios. Each story follows the pattern: *who* wants to do *what* and *why*, with concrete acceptance criteria that define when the story is done.
+
 | Issue | Action |
 |-------|--------|
-| [3a] | Triggered once all `[2]` issues are closed. AI raises a **user story spec PR** (BDD-style stories in markdown). Human review gate — developer must approve before merge → closed |
-| [3b] | Triggered once [3a] is merged. AI creates individual `[3] Feature name` frontend implementation issues → closed |
+| [3a] | Triggered once all `[2]` issues are closed. AI raises a **spec PR** with three parts: **(A)** `docs/tech-decisions-frontend.md` — proposed library choices with rationale; **(B)** `docs/user-stories-frontend.md` — BDD stories derived from the signed-off designs; **(C)** API skeleton — endpoint contracts, response shapes, and RTK Query hooks table. Human review gate — developer must approve before merge → closed |
+| [3b] | Triggered once [3a] is merged. AI does two things: **(1)** creates individual `[4] Feature name` frontend implementation issues (closely related stories may be grouped into one issue); **(2)** raises a **backend skeleton PR** implementing the API contracts from [3a] using `Bogus` (Faker for .NET) — real HTTP endpoints, no service layer, deterministic seeded data. → closed |
+
+**[3a] spec PR — what the AI produces:**
+- `docs/tech-decisions-frontend.md` — library choices (UI component lib, chart lib, date handling, other deps)
+- `docs/user-stories-frontend.md` — BDD stories with acceptance criteria referencing the chosen libraries
+- API skeleton section in the stories doc: endpoint contracts (path, params, response shapes), RTK Query hooks table
+
+**[3a] tech decisions — the AI proposes choices for:**
+- UI component library (e.g. shadcn/ui, MUI, Mantine, Radix UI, or none)
+- Chart / visualisation library (e.g. Recharts, Chart.js, Nivo, Visx, D3)
+- Date handling (e.g. date-fns, dayjs, native `Intl`/Temporal)
+- Any other notable runtime dependencies specific to the project
 
 ---
 
 ### Phase 4 — Frontend Implementation
 
-No initial issues. All work is driven by `[3]` issues created in Phase 3.
+No initial issues. All work is driven by `[4]` issues created by [3b]. The backend skeleton (Faker endpoints) is already running — frontend makes real HTTP calls throughout.
 
 | Issue | Action |
 |-------|--------|
-| [4] *per story* | AI implements the feature with mock/Faker data. Raises a **feature PR** with `Closes #N` in the body and a comment on the issue linking to the PR. Developer reviews → merges → issue auto-closes |
+| [4] *per story* | AI writes Vitest + RTL tests first (AC items → test cases), then implements the component/feature to make them pass. Raises a **feature PR** with `Closes #N` in the body and a comment on the issue. Developer reviews → merges → issue auto-closes |
 
 ---
 
@@ -137,13 +174,28 @@ Formal phases end here. Post-MVP work is informal and developer-led.
 
 ---
 
+## Branch Strategy
+
+| Branch | Purpose |
+|---|---|
+| `main` | Production-ready code only — merged from `dev` by the **human developer** when a milestone is complete |
+| `dev` | Integration branch — **all feature/spec/docs PRs target `dev`** |
+| `feat/*`, `fix/*`, `spec/*`, `docs/*` | Short-lived work branches — always branch from `dev`, always PR back to `dev` |
+
+**Never PR directly to `main`.** The AI always sets `dev` as the base branch when raising PRs.
+
+**`dev` → `main` is a human-only action.** The AI never raises a PR targeting `main` and never merges `dev` into `main`. This is a deliberate gate — the developer decides when a milestone is production-ready.
+
+---
+
 ## PR ↔ Issue Linking
 
-When the AI raises a PR for an issue, it does two things:
+When the AI raises a PR for an issue, it does three things:
 
 1. **`Closes #N` in the PR body** — GitHub automatically closes the issue when the PR is merged and shows the link in both the PR and issue sidebars.
 2. **Comment on the issue** — The AI posts a comment on the issue itself:
    > 🤖 PR raised: #42 — please review when ready.
+3. **Assign the PR to the repo owner** — Every PR is assigned to `jemmy8oy` so it appears in the developer's assigned PRs list and is easy to find.
 
 This means anyone watching the issue gets notified and can navigate to the PR without searching for it.
 

@@ -1,0 +1,22 @@
+.ratio-chart { width: 100%; }
+
+.ratio-chart__ranges {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  justify-content: center;
+}
+
+.ratio-chart__ranges button {
+  background: none;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ratio-chart__ranges button:hover { color: var(--text-primary); border-color: var(--glass-border); }
+.ratio-chart__ranges button.active { color: #6366f1; border-color: #6366f1; }

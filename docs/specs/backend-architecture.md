@@ -67,10 +67,15 @@ AutoMapper is configured in `ServiceRegistration.cs` to scan all assemblies for 
 |---|---|---|---|
 | Request | `*Request` | `DataModels/` | What the client sends (minimal fields, no server-managed properties) |
 | Data Model | Simple noun | `DataModels/` | What the API returns to clients |
-| Domain Model | `Domain*` | `DomainModels/` | Internal rich model used by service layer |
+| Domain Model | `Domain*` | `DomainModels/` | Internal rich model used by service layer; extends its DataModels counterpart |
 | Entity | `*Entity` | `EntityModels/` | Direct EF Core database mapping |
 
 **Never include server-managed fields** (`Id`, `CreatedAt`, `IsVerified`) in `*Request` models. This prevents over-posting attacks.
+
+**Naming rules for `*Request` / `*Response`:**
+- Use `*Request` only for inbound route arguments that have non-trivial shape (e.g. a POST body with validation). Simple query-string parameters do not need a request wrapper.
+- Use `*Response` only when the route constructs a return shape that is **meaningfully different** from what the service returns — i.e. it aggregates, renames, or adds fields. If the route simply maps a domain model 1-to-1 to a data model, the data model should use a plain noun (`Ratio`, not `RatioResponse`).
+- `Domain*` models extend their `DataModels/` counterpart (e.g. `DomainRatio : Ratio`) and add business-layer behaviour. They are never returned directly by routes.
 
 ### 5. Route Grouping (Minimal APIs)
 

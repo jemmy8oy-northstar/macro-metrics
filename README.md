@@ -268,6 +268,89 @@ After scaffolding with `dotnet new web-template -n Company.ProjectName`, work th
 
 ---
 
+## Taking PR Screenshots
+
+The repo includes a headless-browser screenshot script (`scripts/take-screenshots.js`) that captures each UI section of the app and uploads the images as a PR comment. This is the process used by the AI agent during code review.
+
+### Prerequisites
+
+Both the backend and the Vite dev server must be running before you take screenshots.
+
+**Backend** (skeleton mode — no database required):
+```bash
+cd backend
+dotnet run --project MacroMetrics.WebApi
+# runs at http://localhost:5257
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm run dev
+# runs at http://localhost:5173
+```
+
+### Install Playwright
+
+Playwright requires Chromium and a set of system libraries. On a stock Linux/AArch64 container run:
+
+```bash
+npm install playwright
+npx playwright install chromium
+npx playwright install-deps chromium
+```
+
+> **Note (AArch64 / OKE pods):** The container image may be missing several Chromium shared libraries (`libatk`, `libgbm`, `libxkbcommon`, etc.). Running `npx playwright install-deps chromium` installs them via `apt-get` — this requires the pod image to have `apt-get` available. If it doesn't, ask the platform team to add the Playwright system-dep layer to the Dockerfile.
+
+### Run the script
+
+```bash
+node scripts/take-screenshots.js
+```
+
+This navigates to `http://localhost:5173`, waits for the network to go idle, and saves five screenshots to `./screenshots/`:
+
+| File | What it shows |
+|---|---|
+| `01-hero.png` | Landing view with sticky mini-nav |
+| `02-presets-section.png` | 9 preset ratio cards with compact sparklines |
+| `03-full-page.png` | Full-page scroll capturing all four sections |
+| `04-compare-prepopulated.png` | Custom comparison section after clicking a preset card |
+| `05-indicators-section.png` | CAPE · UK 10yr Gilt · US 10yr Treasury indicator cards |
+
+### Upload to GitHub
+
+Push the screenshots to a dedicated branch and reference them in a PR comment using raw GitHub URLs:
+
+```bash
+git checkout -b screenshots/pr-<NUMBER>
+git add screenshots/
+git commit -m "chore: add PR screenshots for #<NUMBER>"
+git push -u origin screenshots/pr-<NUMBER>
+```
+
+Then post a PR comment with Markdown image links pointing to `raw.githubusercontent.com`:
+
+```markdown
+![Hero view](https://raw.githubusercontent.com/jemmy8oy/macro-metrics/screenshots/pr-<NUMBER>/screenshots/01-hero.png)
+```
+
+---
+
+### Complications & resolutions (first documented run — PR #37)
+
+The first time the screenshot workflow was run (headless Playwright in a Kubernetes pod on OCI / AArch64) several issues were encountered:
+
+| Problem | Root cause | Resolution |
+|---|---|---|
+| `dotnet run` crashed immediately on startup | EF Core `Database.Migrate()` throws when PostgreSQL is unreachable — even for endpoints that never touch the DB | Wrapped `Migrate()` in a `try/catch`; the backend now logs a warning and continues in skeleton mode |
+| Playwright Chromium download succeeded but the browser refused to launch | The pod's AArch64 base image was missing shared libraries: `libatk-1.0`, `libgbm`, `libxkbcommon`, `libxcomposite`, and several others | Ran `npx playwright install-deps chromium`; `apt-get` installed the missing `.so` files |
+| `--no-sandbox` flag required | Chromium refuses to start as root without disabling the sandbox | Passed `--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage` in the browser launch options (already baked into the script) |
+| Screenshot of presets section captured before charts finished rendering | Recharts SVG draws asynchronously after the first paint | Added a 2-second `waitForTimeout` after scrolling to each section; good enough for skeleton → data transitions |
+| Preset-card click couldn't be located for screenshot #4 | The card's CSS class name wasn't stable across builds | Script falls back to scrolling `#compare` directly if no preset card selector matches |
+
+---
+
 ## GitHub Actions
 
 Two workflows are included in `.github/workflows/`:
