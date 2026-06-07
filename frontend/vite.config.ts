@@ -12,15 +12,17 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api': {
+      '/macro-metrics/api': {
         target: 'http://localhost:5257',
         changeOrigin: true,
         secure: false,
+        rewrite: (path) => path.replace(/^\/macro-metrics/, ''),
       },
-      '/openapi': {
+      '/macro-metrics/openapi': {
         target: 'http://localhost:5257',
         changeOrigin: true,
         secure: false,
+        rewrite: (path) => path.replace(/^\/macro-metrics/, ''),
       }
     }
   }
