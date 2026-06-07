@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "balenthiranhelm.fullname" . }}
+  name: {{ include "macro-metrics-helm.fullname" . }}
   labels:
-    {{- include "balenthiranhelm.labels" . | nindent 4 }}
+    {{- include "macro-metrics-helm.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -22,7 +22,7 @@ spec:
             pathType: {{ .ingress.pathType | default "Prefix" }}
             backend:
               service:
-                name: {{ include "balenthiranhelm.fullname" $ }}-{{ .name }}
+                name: {{ include "macro-metrics-helm.fullname" $ }}-{{ .name }}
                 port:
                   number: {{ .service.port }}
           {{- end }}
