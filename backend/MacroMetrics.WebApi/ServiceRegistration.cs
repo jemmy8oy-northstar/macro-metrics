@@ -6,19 +6,12 @@ using MacroMetrics.Services;
 using MacroMetrics.Services.Fetchers;
 using MacroMetrics.Services.Metrics;
 using MacroMetrics.Services.Normalisation;
-using MacroMetrics.Database;
-using Microsoft.EntityFrameworkCore;
-
 namespace MacroMetrics.WebApi;
 
 public static class ServiceRegistration
 {
     public static void AddBackendServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-        services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString, b => b.MigrationsAssembly("MacroMetrics.Database")));
-
         services.AddAutoMapper(cfg => cfg.AddMaps(AppDomain.CurrentDomain.GetAssemblies()));
 
         // In-memory cache — used by MetricSeriesOrchestrator to cache normalised series for 1 hour

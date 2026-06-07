@@ -8,7 +8,7 @@ import { ThemeProvider } from './context/ThemeContext'
 function App() {
   return (
     <ThemeProvider>
-      <Router>
+      <Router basename="/macro-metrics">
         <ScrollToTop />
         <div className="app-container">
           <Navbar />
