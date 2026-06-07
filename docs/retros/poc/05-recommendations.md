@@ -236,6 +236,93 @@ The MacroMetrics POC showed that "Assume & Document" would have been more effici
 
 ---
 
+## Recommendation 11 — Always Assign the Repository Owner
+
+**The gap:** ~60–70% of Phase 6 issues and PRs were created without assigning the developer. GitHub notifications are assignee-driven — no assignee means the developer may silently miss activity.
+
+**Evidence:** Issues #44–#56, #58, #59, #73 (and the PRs that closed them) were all created without an assignee. The developer confirmed this directly: *"the bot does not consistently assign me when it creates an issue or PR, this is essential to ensure that I get notifications."*
+
+**Fix (one line):**
+Add to `CLAUDE.md` (and the web-template):
+```
+## Notification Rule (mandatory)
+Always assign the repository owner to every issue and PR:
+  gh issue create ... --assignee $(gh repo view --json owner --jq .owner.login)
+  gh pr create   ... --assignee $(gh repo view --json owner --jq .owner.login)
+```
+
+Add this to every issue factory's `gh issue create` loop — especially `[3b]` (creates frontend issues) and `[5c]` (creates 19 backend issues).
+
+**Secondary fix — PR template:**
+Add a `--assignee` line to the `gh pr create` template in `CLAUDE.md` so it's always included by default.
+
+---
+
+## Recommendation 12 — Reduce action-ready Relabelling Friction
+
+**The gap:** The developer had to manually re-apply `action-ready` after every AI pass — including partial passes and timeouts. For issues like #8 `[5a]` (3 passes) and #57 (timeout → second run), this was repeated friction.
+
+The developer raised this directly: *"I often have to keep relabelling issues with ai ready."*
+
+**Fix — self-relabelling on partial completion:**
+When the AI does not fully complete a task (no PR raised, or work was explicitly noted as partial), re-apply the `action-ready` label before exiting:
+```bash
+# Partial/timeout — re-label so the next trigger fires automatically
+gh issue edit $ISSUE_NUMBER --add-label "action-ready"
+gh issue comment $ISSUE_NUMBER --body "⚡ Pass N complete (partial). Re-labelled for next pass. Remaining: [X]"
+```
+
+**Fix — label lifecycle clarity:**
+Introduce a two-label pattern:
+| Label | Meaning |
+|---|---|
+| `action-ready` | Human has approved — trigger the AI |
+| `action-in-progress` | AI is currently working |
+
+The AI sets `action-in-progress` when it starts, and either:
+- Closes the issue/labels `action-complete` on success
+- Re-labels `action-ready` on partial completion
+
+This lets the developer see at a glance which issues need a re-trigger vs which are awaiting review.
+
+**Fix — iteration limit per issue type:**
+Set `max_turns` hints in issue templates to guide the operator:
+- Orchestrator issues `[1c]`, `[3a]`, `[5a]`: ~80 turns (complex, multi-pass)
+- Implementation issues `[4]`, `[6]`: ~40 turns (one-pass expected)
+
+---
+
+## Recommendation 13 — Structured Pass Summaries for Multi-Pass Issues
+
+**The gap:** The AI has no persistent memory between triggers. On each new pass it re-reads the same files, re-checks the same dependencies, and sometimes re-asks the same questions. This wastes tokens and contributes to the EF Core re-questioning pattern.
+
+**Fix — structured pass summary comments:**
+At the end of every AI run (partial or complete), leave a structured summary comment:
+```markdown
+## AI Pass 2 Summary — 2026-06-07
+
+**Status:** Partial — PR not yet raised. Timed out at Cache-Control implementation.
+
+**Completed this pass:**
+- Read project spec, backend design, and Phase 6 user stories ✅
+- Set up `CacheControlEndpointFilter` in `MacroMetrics.WebApi` ✅
+- Unit tests written ✅
+
+**Not completed:**
+- Integration test wiring for the filter
+- PR not raised
+
+**Files to skip re-reading next pass:**
+- `docs/specs/project-vision.md` (no DB, stateless proxy)
+- `docs/backend-design.md` (service architecture finalised)
+
+**Next trigger:** Re-apply `action-ready`. Implementation is ~70% complete.
+```
+
+This dramatically reduces the startup overhead of pass N+1 — the AI reads the summary comment instead of re-crawling the whole spec tree.
+
+---
+
 ## Summary Priority Matrix
 
 | Recommendation | Impact | Effort | Priority |
@@ -244,9 +331,12 @@ The MacroMetrics POC showed that "Assume & Document" would have been more effici
 | 2 — Assumptions PR section | High | Low | 🔴 Do first |
 | 5 — Data source validation in [5a] | High | Low | 🔴 Do first |
 | 6 — Dev-first branch workflow | High | Low | 🔴 Do first |
+| 11 — Always assign repository owner | High | Low | 🔴 Do first |
 | 7 — Deployment phase | High | Medium | 🟠 Next sprint |
+| 12 — Reduce action-ready relabelling | Medium | Low | 🟠 Next sprint |
 | 8 — Retro phase | Medium | Low | 🟠 Next sprint |
 | 4 — Split [3a] | Medium | Low | 🟠 Next sprint |
+| 13 — Structured pass summaries | Medium | Medium | 🟠 Next sprint |
 | 3 — Phase Guard comments | Medium | Low | 🟡 Nice to have |
 | 9 — Clarification protocol | Medium | Low | 🟡 Nice to have |
 | 10 — Assume vs Ask mode | Low | Low | 🟡 Nice to have |

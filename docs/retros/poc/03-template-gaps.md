@@ -181,6 +181,111 @@ This makes it easy for the developer to scan the PR for implicit decisions and e
 
 ---
 
+## Gap 10 — AI Does Not Consistently Assign Developer to Issues and PRs
+
+**Where it hurt:** Developer notification reliability. The GitHub notification system works through assignees — if the developer is not assigned, they may miss activity on an issue or PR entirely.
+
+**Evidence from the POC:**
+Looking at all 50 issues and 38 PRs, assignees were applied inconsistently:
+
+| Category | Issues without assignee |
+|---|---|
+| Phase 6 implementation issues (#44–#56, #58, #59, #73) | ~70% had no assignee |
+| Phase 6 PRs (#41, #42, #61–#63, #66, #67–#73, #75, #79) | ~60% had no assignee |
+| Bug issues (#39) | No assignee |
+| Template orchestrator issues | Mostly assigned (better) |
+
+The inconsistency appears to be correlated with Phase 6 — issues and PRs created once the "issue factories" were running (after `[5c]`) were often not assigned. Earlier phases (1–4) had better assignment coverage.
+
+**Root cause:** The `CLAUDE.md` AI workflow instructions mention assigning the repository owner in some contexts but not uniformly. Phase 6 issues were created programmatically via the `[5c]` issue factory, which may not have included assignees in its `gh issue create` calls.
+
+**Impact:** The developer has to manually check GitHub or rely on Telegram polling to notice activity on unassigned issues/PRs. The `action-ready` label approach only works if the developer is notified — without assignees, the developer may not see that the AI has left a comment or raised a PR.
+
+**Proposed fix:**
+
+1. In `CLAUDE.md` (both in the project repo and in `web-template`), add:
+   ```
+   ## Notification Rule
+   - ALWAYS assign the repository owner to every issue created or PR raised.
+   - Use: `gh issue create --assignee <owner>` and `gh pr create --assignee <owner>`
+   - If the owner username is not known from context, retrieve it with: `gh repo view --json owner --jq .owner.login`
+   ```
+
+2. In every issue factory script (`[3b]`, `[5c]`) add `--assignee $(gh repo view --json owner --jq .owner.login)` to all `gh issue create` calls.
+
+3. Add a post-creation verification: after creating issues, list them and confirm all have at least one assignee.
+
+---
+
+## Gap 11 — Relabelling Friction: `action-ready` Must Be Manually Reapplied
+
+**Where it hurt:** Developer workflow overhead. After each AI run (successful or timed-out), the `action-ready` label is removed. The developer must manually re-apply it to trigger the next run. For multi-pass issues (like #8 `[5a]` which needed 3 passes, or #57 which timed out), this created repeated relabelling work.
+
+**Evidence:**
+- Issue #8 required the developer to re-apply `action-ready` at least 3 times
+- Issue #57 timed out on first run — developer had to re-apply the label for the second pass
+- The developer raised this directly: *"I often have to keep relabelling issues with ai ready — maybe I need to improve the iteration length"*
+
+**Root cause:** The current architecture removes `action-ready` on every trigger, regardless of whether the task completed. This is intentional (prevents infinite loops) but creates friction for legitimate multi-pass work.
+
+**Proposed fixes:**
+
+**Option A — Self-labelling on partial completion:**
+When the AI detects it has not fully completed the task (e.g., timed out, PR not yet raised), it re-applies `action-ready` itself before exiting:
+```bash
+# At end of partial run
+gh issue edit $ISSUE_NUMBER --add-label "action-ready"
+```
+
+**Option B — Increase iteration limit per issue type:**
+- Orchestrator issues (`[1c]`, `[3a]`, `[5a]`) typically need 2–4 AI rounds. Set `max_turns=80` for these.
+- Implementation issues (`[4]`, `[6]`) typically complete in one pass. Keep `max_turns=40`.
+- Add the expected pass count to each issue template as a hint to the operator.
+
+**Option C — Label lifecycle management:**
+Introduce a `action-in-progress` label that the AI sets when it starts work, and `action-complete` when finished. The `action-ready` label is only re-added manually when the developer wants to trigger a new pass.
+
+**Recommended:** Option A + B together. Option A avoids lost-work scenarios (timeout). Option B reduces how often A is needed.
+
+---
+
+## Gap 12 — Session Memory: AI Re-discovers Context on Every Trigger
+
+**Where it hurt:** Token efficiency and consistency. On every trigger, the AI re-reads the same files (project spec, tech decisions doc, backend design spec, workflow docs). For multi-pass issues, this means the same files are read 2–4 times. For later phases (Phase 6), this context re-read took a significant portion of the available context window and turn budget.
+
+**Evidence:**
+- Issue #8 `[5a]`: The EF Core question was re-asked 3 times partly because the AI re-read the `[5a]` issue template (which mentions EF Core) without correctly reconciling it against the project vision on each new pass
+- Issue #57: Likely timed out partly due to redundant file exploration on startup
+- The dependency check multi-paragraph comments were generated fresh each trigger, re-reading all `[4]` issues from scratch
+
+**Root cause:** Stateless AI triggers — each trigger is a fresh agent run with no memory of previous runs. The AI must re-discover the project state from GitHub each time.
+
+**Proposed fixes:**
+
+1. **Structured issue comments as state:** When an AI pass completes (successfully or not), leave a structured summary comment on the issue:
+   ```markdown
+   ## Pass N Summary (YYYY-MM-DD)
+   **Status:** [completed/partial/blocked]
+   **Files read:** [list of key files, skip re-reading next pass]
+   **Decisions made:** [list of non-obvious decisions]
+   **Remaining work:** [what's left if partial]
+   **Next trigger:** [what the developer needs to do, e.g. re-label, answer question]
+   ```
+   On the next trigger, the AI reads only this summary comment rather than re-reading all files from scratch.
+
+2. **Canonical project state document:** Maintain a `docs/project-state.md` that is updated by the AI after each phase completes, summarising the current state of all decisions. This is faster to read than the full spec chain.
+
+3. **Issue-specific context hints:** In the issue body, add a section:
+   ```markdown
+   ## Context hints for AI
+   - Project spec: `docs/specs/project-vision.md`
+   - Key decision: No database (stateless proxy)
+   - Tech stack: .NET 8 Minimal API, React + Vite, Python yfinance sidecar
+   ```
+   This lets the AI read one short section instead of crawling the full docs tree.
+
+---
+
 ## Summary of Proposed Template Changes
 
 | Gap | Impact | Effort | Priority |
@@ -194,3 +299,6 @@ This makes it easy for the developer to scan the PR for implicit decisions and e
 | Gap 7 — Assumptions section in PR | Medium (3+ silent assumptions) | Low | 🟠 Medium |
 | Gap 8 — Retro phase | Medium (process completeness) | Low | 🟠 Medium |
 | Gap 9 — CSS standards | Low (one bug) | Low | 🟡 Low |
+| Gap 10 — Assignee not consistently set | High (missed notifications) | Low | 🔴 High |
+| Gap 11 — action-ready relabelling friction | Medium (developer overhead) | Low | 🟠 Medium |
+| Gap 12 — Session memory / context re-discovery | Medium (token waste, repeated questions) | Medium | 🟠 Medium |

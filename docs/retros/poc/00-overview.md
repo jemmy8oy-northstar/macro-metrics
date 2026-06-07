@@ -52,8 +52,30 @@ The SDD process **worked well as a forcing function for upfront thinking**. The 
 3. **Assumption surfacing** — the AI made assumptions that were sometimes wrong (e.g. FRED hosting CAPE), leading to bug issues
 4. **Timeout/chunking** — one issue (#57) timed out because the task was too complex for a single AI run
 5. **Dependency checking noise** — the AI re-checked dependency conditions multiple times per issue, adding friction
+6. **Assignee consistency** — ~65% of Phase 6 issues and PRs were created without assigning the developer, breaking GitHub notifications
+7. **action-ready relabelling** — developer had to manually re-apply the label after every AI pass, including timeouts
 
 See the sibling retro documents for detail on each area.
+
+---
+
+## Developer Autonomy Observations
+
+During the retro, the developer raised several questions about increasing AI autonomy. These are captured here with analysis:
+
+### "I often have to keep relabelling issues with action-ready"
+**Current friction:** Every AI trigger removes `action-ready`. Multi-pass issues (e.g. #8 required 3 passes, #57 timed out) require repeated manual re-labelling.
+**Proposed fix:** AI self-relabels `action-ready` after partial passes. See Recommendation 12.
+
+### "Maybe I need to improve the iteration length — it's 20 rounds currently"
+**Analysis:** 20 turns is low for complex orchestrator issues. A `[5a]` backend design spec that reads spec documents, writes ADRs, and raises a PR realistically needs 30–50 turns. Implementation issues `[6]` need 20–40. Recommendation: set `max_turns` per issue type (see Recommendation 12).
+
+### "Wondering whether I can make the bot remember sessions per issue"
+**Analysis:** The AI is stateless between triggers. Every pass re-reads the same files and re-checks the same dependencies. For late-phase issues (Phase 6), this added substantial overhead.
+**Proposed fix:** Structured pass summary comments — the AI writes a compact summary at the end of each pass that the next pass reads instead of re-discovering everything from scratch. See Recommendation 13.
+
+### "Whether we can have a process where the AI can make sensible suggestions and in the PR the AI can outline all assumptions"
+**Analysis:** This is the "Assumptions & Decisions" PR section (Recommendation 2). It lets the developer scan a table of AI decisions in the PR rather than reviewing every line of code. This directly addresses the silent assumption problem (CAPE/FRED, branch targeting, CSS approach). Recommend implementing this as a mandatory PR template section.
 
 ---
 

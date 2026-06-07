@@ -162,6 +162,22 @@ These were not created from the template — they emerged during implementation.
 
 ---
 
+## Assignee Pattern Analysis
+
+Assigning the developer to issues and PRs is essential for GitHub notifications to fire. The POC showed a clear degradation in assignee coverage as the project progressed:
+
+| Phase | Issues created | Assigned | Not assigned |
+|---|---|---|---|
+| Phase 1–2 (orchestrator, design) | #2–#24 | ~90% | ~10% |
+| Phase 3–4 (frontend) | #32–#40 | ~80% | ~20% |
+| Phase 5 (backend design) | #8–#10 | ~100% | 0% |
+| Phase 6 (backend impl, factory-created) | #43–#59, #73 | ~30% | ~70% |
+| PRs (Phase 6) | #41, #42, #61–#79 | ~35% | ~65% |
+
+**Conclusion:** Issue and PR factory scripts (`[5c]`, and later the individual story PRs) omitted the `--assignee` flag. This is a one-line fix with high impact: the developer cannot reliably govern the process if they are not notified of AI activity.
+
+---
+
 ## Issue Template Quality Assessment
 
 | Template | Used for | What was missing |
@@ -171,3 +187,5 @@ These were not created from the template — they emerged during implementation.
 | `[3a]` User story + tech decisions | Frontend spec | API skeleton section, TDD section, BDD definition |
 | `[5a]` Backend design | Backend spec | Remove EF Core from AC when DB not required; add data source validation step |
 | `[6]` Backend implementation | Per-story implementation | "Real HTTP call required (not stub)" should be explicit in fetcher story ACs |
+| All issue factories (`[3b]`, `[5c]`) | Issue creation | `--assignee` flag missing — developer not notified of created issues |
+| All PR creation | PR raising | `--assignee` flag inconsistently applied — developer not notified of raised PRs |
