@@ -434,6 +434,67 @@ This is a Track A change (template-only, no fork code needed).
 
 ---
 
+## Recommendation 18 — Document `waiting-for-ai` vs `action-ready` Label Modes
+
+**From the discussion:** The `waiting-for-ai` vs `action-ready` distinction is a fundamental part of the workflow, but it is not written down anywhere the developer can easily reference. The developer used `waiting-for-ai` on re-triggers where they expected continued implementation, but the bot is explicitly programmed to refuse implementation on `waiting-for-ai` issues.
+
+**The distinction:**
+
+| Label | Bot behaviour | When to use |
+|---|---|---|
+| `waiting-for-ai` | Discussion-only: post a comment, answer questions, propose a plan. **Will not implement or raise a PR.** | First contact on a new issue; Q&A; requesting analysis or a plan without implementation |
+| `action-ready` | Implementation: read the issue, write code, raise a PR. | After reviewing/approving a plan; re-triggering after a partial pass; any time you want code produced |
+
+**Fix:**
+1. Add a **"Label Quick Reference"** table to `docs/ai-workflow.md` with the two modes above
+2. Add to `CLAUDE.md`: when closing out a partial pass, include the explicit instruction *"Re-apply `action-ready` (not `waiting-for-ai`) to continue implementation."*
+3. Optional fork enhancement: add a `waiting-for-ai-continue` label that triggers implementation mode without requiring `action-ready` — useful when the developer wants to add context and re-trigger in one step
+
+This is a documentation-only Track A change.
+
+---
+
+## Recommendation 19 — Frontend PR Screenshots + Playwright in Bot Container
+
+**From the discussion:** Frontend changes were merged without visual evidence, and the bot container lacks the tooling to take screenshots automatically.
+
+**Two-part fix:**
+
+**Part 1 — Template gate (Track A):**
+Add a mandatory screenshot AC to `[3]`/`[4]` frontend issue templates:
+```markdown
+## Visual Evidence (mandatory)
+- [ ] Screenshot of the rendered UI attached to the PR body
+- [ ] Shows the feature at ≥1280×800 desktop viewport
+- [ ] If automated: `npx playwright screenshot --full-page http://localhost:5173 pr-screenshot.png`
+```
+
+Add to `CLAUDE.md`:
+```markdown
+## Frontend PR Screenshots (mandatory)
+For any PR modifying React components or CSS:
+- Capture a screenshot before raising the PR.
+- Attach via markdown image in the PR body: `![screenshot](./pr-screenshot.png)` or as a GitHub comment attachment.
+- Preferred tool: `npx playwright screenshot` (if Playwright is available in the environment).
+```
+
+**Part 2 — Bot container (Track B — k8s bot Dockerfile):**
+Add Playwright + Chromium system dependencies to `claude-code-telegram-k8s/Dockerfile`:
+```dockerfile
+# Headless browser dependencies for frontend screenshot capture
+RUN apt-get update && apt-get install -y \
+  libatk-bridge2.0-0 libdrm2 libgbm1 libglib2.0-0 libnss3 libxss1 \
+  libasound2 libx11-xcb1 libxcb-dri3-0 libxcomposite1 libxcursor1 \
+  libxdamage1 libxfixes3 libxrandr2 libxtst6 fonts-liberation \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g playwright && npx playwright install chromium
+```
+
+This gives the AI the ability to automatically capture and attach screenshots when raising frontend PRs, without any developer intervention. Tracked as a new issue on `claude-code-telegram-k8s`.
+
+---
+
 ## Implementation Classification — Template vs Fork
 
 All 15 recommendations fall into one of two tracks. This matters for sequencing: template changes can be applied immediately; fork changes require a code PR on `claude-code-telegram-k8s`.
@@ -458,6 +519,8 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 14 — Multi-pass context (partial) | `CLAUDE.md` multi-pass block |
 | 16 — Surface testing in issue ACs | `web-template` `[3]` + `[5]` issue bodies; `CLAUDE.md` testing section |
 | 17 — Claude Code hooks / AI guards | `web-template` `.claude/settings.json` + `CLAUDE.md` AI Guards section |
+| 18 — Label mode documentation | `web-template` `docs/ai-workflow.md`; `CLAUDE.md` label quick reference |
+| 19 (template part) — Screenshot gate in frontend ACs | `web-template` `[3]`/`[4]` issue bodies; `CLAUDE.md` screenshot rule |
 
 ### Track B — Fork-level changes (require PR on `claude-code-telegram-k8s`)
 
@@ -466,6 +529,7 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 12 — per-label `max_turns` config | `values.yaml` `claudeMaxTurnsByLabel` map | [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) |
 | 14 — Latest comment as task prompt | `_build_github_prompt()` — fetch + find latest unanswered comment | [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) |
 | 15 — max_turns visibility + limit increase | `stop_reason` detection; ⚠️ comment + Telegram alert; raise default | [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) |
+| 19 (container part) — Playwright + headless browser | Add Chromium + Playwright to `Dockerfile` for automated screenshot capture | New issue to be raised |
 
 ---
 
@@ -488,6 +552,8 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 13 — Structured pass summaries | Medium | Medium | Template | 🟠 Next sprint |
 | 16 — Surface testing in issue ACs | High | Low | Template | 🟠 Next sprint |
 | 17 — Claude Code hooks / AI guards | Medium | Low | Template | 🟠 Next sprint |
+| 18 — `waiting-for-ai` vs `action-ready` documentation | Medium | Low | Template | 🟠 Next sprint |
+| 19 — Frontend screenshots + Playwright in bot | Medium | Low (template) / Medium (fork) | Template + Fork | 🟠 Next sprint |
 | 3 — Phase Guard comments | Medium | Low | Template | 🟡 Nice to have |
 | 9 — Clarification protocol | Medium | Low | Template | 🟡 Nice to have |
 | 10 — Assume vs Ask mode | Low | Low | Template | 🟡 Nice to have |

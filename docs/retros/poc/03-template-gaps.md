@@ -429,6 +429,79 @@ This is tracked in **[claude-code-telegram-k8s #34](https://github.com/jemmy8oy/
 
 ---
 
+## Gap 17 — `waiting-for-ai` vs `action-ready` Workflow Not Documented
+
+**Where it hurt:** The two labels trigger fundamentally different bot modes, but this distinction is not written down in the SDD workflow or any developer-facing guidance. The developer re-triggered issues with `waiting-for-ai` when they wanted continued implementation — but `waiting-for-ai` places the bot into discussion-only mode ("respond but do NOT start implementing"). The bot's response was correct per its programming, but the developer had no visibility that the wrong mode had been selected.
+
+**Root cause:** `docs/ai-workflow.md` / `sdd-workflow.md` lists the labels but does not explain what mode each triggers or when to use which label at each stage.
+
+**Label modes:**
+
+| Label | Bot mode | When to use |
+|---|---|---|
+| `waiting-for-ai` | **Discussion** — bot answers questions, proposes plans, asks clarifying questions. Does NOT implement or raise PRs. | First contact on a new issue; Q&A passes; asking for analysis without implementation |
+| `action-ready` | **Implementation** — bot implements the issue, writes code, raises a PR. | When you've reviewed/approved a plan and want the bot to build it; re-triggering after a partial pass to continue implementation |
+
+**Proposed fix:**
+1. Add a "Label Reference" table to `docs/ai-workflow.md` with the two modes above.
+2. Add a callout box to the SDD workflow doc before Phase 4: *"Use `action-ready` when you want implementation to start. Use `waiting-for-ai` for discussion, planning, or analysis only."*
+3. Add to `CLAUDE.md`: when the AI finishes an implementation pass and the next trigger should continue implementation, it must explicitly note *"Re-apply `action-ready` (not `waiting-for-ai`) to continue."*
+
+This is a documentation-only change — no code or template logic changes required.
+
+---
+
+## Gap 18 — No Screenshot Gate for Frontend PRs / No Headless Browser in Bot Container
+
+**Where it hurt:** All frontend PRs in MacroMetrics were merged without any visual evidence. Several frontend issues (e.g. #39 — hardcoded CSS colours) were only discovered post-merge because there was no requirement to include a screenshot in the PR. The developer reviewing the PR had to manually run the app locally to see what the output looked like.
+
+**Root cause — two linked problems:**
+
+**1. Template gap:** The `[3]` (Frontend MVP) and `[4]` (Frontend implementation) issue templates have no AC requiring a screenshot of the rendered UI. There is also no guidance in `CLAUDE.md` about capturing a screenshot before raising a PR for frontend changes.
+
+**2. Infrastructure gap:** The k8s bot Dockerfile (`jemmy8oy/claude-code-telegram-k8s`) does not install Playwright or any headless browser. The bot cannot capture a screenshot of a running frontend app even if instructed to. Current Dockerfile analysis:
+- ✅ Node.js 20, npm, `serve` (static server)
+- ✅ .NET 10 SDK, Python 3.11
+- ❌ No Chromium / Playwright browser binaries
+- ❌ No `libatk-bridge2.0-0`, `libgbm-dev`, `libasound2` or other headless browser system deps
+
+**Proposed fix — Template (immediate):**
+Add to `[3]` and `[4]` frontend issue ACs:
+```markdown
+## Visual Evidence (mandatory for frontend changes)
+- [ ] Screenshot of the rendered UI attached to the PR (use `npx serve build` or `npm run dev`)
+- [ ] If running headless: capture via `playwright screenshot` or equivalent
+- [ ] Screenshot shows the feature working at ≥1280×800 desktop viewport
+```
+
+Add to `CLAUDE.md`:
+```markdown
+## Frontend PR Screenshots (mandatory)
+For any PR that modifies React components or CSS:
+- Capture a screenshot of the relevant page/component before raising the PR.
+- Attach it to the PR body using a markdown image link.
+- If Playwright is available: `npx playwright screenshot --full-page http://localhost:5173 screenshot.png`
+```
+
+**Proposed fix — k8s Bot Dockerfile:**
+Add Playwright + browser dependencies to the bot container so the AI can take screenshots automatically:
+```dockerfile
+# Install Playwright system dependencies
+RUN apt-get update && apt-get install -y \
+  libatk-bridge2.0-0 libdrm2 libgbm1 libglib2.0-0 libnss3 libxss1 \
+  libasound2 libx11-xcb1 libxcb-dri3-0 libxcomposite1 libxcursor1 \
+  libxdamage1 libxfixes3 libxrandr2 libxtst6 fonts-liberation \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright + Chromium
+RUN npm install -g playwright \
+  && npx playwright install chromium
+```
+
+This is tracked as a new issue to be raised on `claude-code-telegram-k8s`.
+
+---
+
 ## Classification — Template vs Fork Changes
 
 All 14 gaps above fall into one of two categories:
@@ -452,6 +525,8 @@ All 14 gaps above fall into one of two categories:
 | Gap 13 — Multi-pass behaviour (partial) | `CLAUDE.md` multi-pass instruction |
 | Gap 15 — Testing strategy not in issue ACs | `web-template` `[3]` + `[5]` issue bodies; `CLAUDE.md` testing standards |
 | Gap 16 — No Claude Code hooks | `web-template` `.claude/settings.json` + `CLAUDE.md` AI Guards section |
+| Gap 17 — `waiting-for-ai` vs `action-ready` not documented | `web-template` `docs/ai-workflow.md`; `CLAUDE.md` label reference |
+| Gap 18 (template part) — No screenshot gate for frontend PRs | `web-template` `[3]`/`[4]` issue ACs; `CLAUDE.md` screenshot rule |
 
 ### Requires fork-level changes
 
@@ -485,3 +560,5 @@ Fork issues raised: [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/i
 | Gap 14 — No visibility when max_turns hit | Medium (silent failures) | Low (fork) | 🟠 Medium |
 | Gap 15 — Testing strategy not surfaced in issue ACs | Medium (inconsistent test coverage) | Low | 🟠 Medium |
 | Gap 16 — No Claude Code hooks / AI guards | Medium (preventable quality issues) | Low | 🟠 Medium |
+| Gap 17 — `waiting-for-ai` vs `action-ready` not documented | Medium (wrong mode selected silently) | Low | 🟠 Medium |
+| Gap 18 — No screenshot gate for frontend PRs / no headless browser in bot | Medium (visual bugs merged undetected) | Low (template) / Medium (Dockerfile) | 🟠 Medium |

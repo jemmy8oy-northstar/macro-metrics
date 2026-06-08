@@ -450,6 +450,110 @@ The prompt currently says "do NOT start implementing" for `waiting-for-ai` issue
 
 ---
 
+## Finding 16 — `waiting-for-ai` vs `action-ready` Mode Not Documented
+
+**File:** `web-template/docs/ai-workflow.md`, `web-template/CLAUDE.md`
+
+**Context from post-retro discussion:** The developer used `waiting-for-ai` on re-triggers where they expected continued implementation. The bot is programmed to refuse implementation in `waiting-for-ai` mode — this is correct but undocumented, creating invisible friction. The developer had no quick reference to know which label to apply and when.
+
+**Current state:** Both labels appear in the workflow but their mode difference is not called out anywhere as a distinct rule.
+
+**Label mode summary:**
+
+| Label | Bot mode | Use when |
+|---|---|---|
+| `waiting-for-ai` | Discussion only — no code written, no PR raised | New issues, Q&A, planning passes |
+| `action-ready` | Full implementation — code written, PR raised | You want the bot to build something |
+
+**Proposed additions:**
+
+1. **`docs/ai-workflow.md`** — add a "Label Quick Reference" section near the top:
+```markdown
+### Label Quick Reference
+
+| Label | Effect | When to apply |
+|---|---|---|
+| `waiting-for-ai` | Bot enters **discussion mode** — answers questions and proposes plans. Will NOT write code or raise a PR. | New issues, Q&A rounds, requesting analysis |
+| `action-ready` | Bot enters **implementation mode** — writes code, runs tests, raises a PR. | After you've reviewed a plan and want implementation to begin or continue |
+
+> **Re-trigger tip:** If you want to continue implementation after a partial pass, use `action-ready` — not `waiting-for-ai`. The bot will note this at the end of each partial pass.
+```
+
+2. **`CLAUDE.md`** — add to the multi-pass instruction:
+```markdown
+At the end of every partial pass, state explicitly: "Re-apply `action-ready` (not `waiting-for-ai`) to continue implementation."
+```
+
+---
+
+## Finding 17 — No Screenshot Gate for Frontend PRs / No Headless Browser in Bot Container
+
+**Files:** `web-template/scripts/init-issues.mjs` (`[3]`/`[4]` issue bodies), `web-template/CLAUDE.md`, `claude-code-telegram-k8s/Dockerfile`
+
+**Context from post-retro discussion:** The developer raised that screenshot requirements for frontend PRs are missing, and that testing dependencies (specifically frontend rendering / screenshot tooling) need to be added to the k8s bot.
+
+**Current Dockerfile analysis (`claude-code-telegram-k8s`):**
+
+| Dependency | Present? | Notes |
+|---|---|---|
+| Node.js 20 | ✅ | via `nodesource` setup |
+| `serve` (static server) | ✅ | via `npm install -g serve` |
+| .NET 10 SDK | ✅ | via dotnet-install.sh |
+| Python 3.11 | ✅ | base image |
+| Playwright / Chromium | ❌ | Not installed |
+| Headless browser system libs | ❌ | `libgbm1`, `libnss3`, etc. absent |
+
+Without Playwright, the bot cannot capture a screenshot of a running React app even if instructed to do so in CLAUDE.md.
+
+**Proposed template change — `[3]`/`[4]` issue bodies:**
+```markdown
+## Visual Evidence (mandatory for frontend changes)
+- [ ] Screenshot of the rendered page/component attached to the PR body
+- [ ] Viewport: ≥1280×800 (desktop)
+- [ ] If Playwright available: `npx playwright screenshot --full-page http://localhost:5173 pr-screenshot.png`
+```
+
+**Proposed `CLAUDE.md` addition:**
+```markdown
+## Frontend PR Screenshots (mandatory)
+For any PR that modifies React components, pages, or CSS:
+1. Start the dev server: `npm run dev` or `npx serve dist`
+2. Capture: `npx playwright screenshot --full-page http://localhost:5173 pr-screenshot.png`
+3. Attach to the PR body.
+If Playwright is not available in the environment, note this in the PR and add a TODO to install it.
+```
+
+**Proposed k8s Dockerfile change:**
+```dockerfile
+# Headless browser for frontend screenshot capture
+RUN apt-get update && apt-get install -y \
+  libatk-bridge2.0-0 libdrm2 libgbm1 libglib2.0-0 libnss3 libxss1 \
+  libasound2 libx11-xcb1 libxcb-dri3-0 libxcomposite1 libxcursor1 \
+  libxdamage1 libxfixes3 libxrandr2 libxtst6 fonts-liberation \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g playwright && npx playwright install chromium
+```
+
+This enables the bot to take automated screenshots of frontend changes before raising a PR, closing the visual evidence gap completely.
+
+---
+
+## Retro Follow-on Repo Map
+
+When applying the fixes from this retrospective, the following repositories need changes. This table is intended to guide the bot (or developer) running retro follow-on tasks so no repo is missed.
+
+| Repo | Track | What changes |
+|---|---|---|
+| `jemmy8oy/web-template` | A (template) | `CLAUDE.md` (all template instruction gaps), `docs/ai-workflow.md` (label quick ref, deployment + retro phases), `docs/specs/sdd-workflow.md` (phase 8+9), `scripts/init-issues.mjs` (assignee, testing ACs, screenshot ACs), `.github/workflows/require-dev-source.yml` (new), `.claude/settings.json` (new AI guard hooks) |
+| `jemmy8oy/claude-code-telegram-k8s` | B (fork infra) | `Dockerfile` (Playwright + headless browser), `values.yaml` (claudeMaxTurnsByLabel), plus any config consumed by issues [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) and [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) |
+| `jemmy8oy/claude-code-telegram` | B (fork source) | `src/events/handlers.py` — `_build_github_prompt()` to include comments and use latest unanswered; add `stop_reason` detection |
+| `jemmy8oy/macro-metrics` | Project-specific | No further changes post-merge of this PR; CLAUDE.md already reflects current project state |
+
+> **Bot instruction:** When actioning retro follow-on tasks, read this table first. Check each repo for relevant open issues or PRs before creating duplicates.
+
+---
+
 ## Summary — File Change Map
 
 | File | Change type | Priority |
@@ -471,3 +575,8 @@ The prompt currently says "do NOT start implementing" for `waiting-for-ai` issue
 | `CLAUDE.md` | Add Testing Standards section | 🟠 High |
 | `web-template` `.claude/settings.json` | New file — linter + branch-guard hooks | 🟠 High |
 | `CLAUDE.md` | Add AI Guards section describing active hooks | 🟠 High |
+| `docs/ai-workflow.md` | Add Label Quick Reference (`waiting-for-ai` vs `action-ready`) | 🟠 High |
+| `CLAUDE.md` | Add re-trigger instruction to partial-pass closings | 🟠 High |
+| `scripts/init-issues.mjs` (`[3]`/`[4]` body) | Add screenshot AC | 🟠 High |
+| `CLAUDE.md` | Add Frontend PR Screenshots section | 🟠 High |
+| Fork: `claude-code-telegram-k8s` `Dockerfile` | Install Playwright + Chromium + system headless deps | 🟠 High |

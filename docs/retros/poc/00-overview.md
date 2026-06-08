@@ -57,6 +57,8 @@ The SDD process **worked well as a forcing function for upfront thinking**. The 
 8. **Multi-pass context** — the AI re-asked questions already answered in previous comments because it used the issue body as its prompt rather than the latest unanswered comment
 9. **Testing not enforced by ACs** — 200+ tests were produced but this relied on the AI choosing to apply the testing strategy; no issue AC mandated it
 10. **No AI guards / hooks** — structural quality rules (CSS formatting, branch discipline, assignee) were enforced by instruction only, with no automatic enforcement via Claude Code hooks
+11. **`waiting-for-ai` vs `action-ready` confusion** — the two labels trigger fundamentally different bot modes (discussion-only vs full implementation). Using the wrong label at a re-trigger point sent the bot into the wrong mode with no visible signal to the developer
+12. **No screenshot gate for frontend PRs** — frontend changes were merged without visual evidence; the bot container also lacks a headless browser, making automated screenshot capture impossible
 
 See the sibling retro documents for detail on each area.
 
@@ -76,6 +78,17 @@ A full audit of the `claude-code-telegram` bot's prompts and workflow was also c
 **Additional findings from post-retro discussion (2026-06-08):**
 - Testing standards exist in `docs/specs/testing-strategy.md` but are not surfaced in issue ACs — Gap 15 / Recommendation 16
 - Claude Code supports `PreToolUse`/`PostToolUse` hooks (AI guards) equivalent to Cursor/Windsurf command hooks — not yet configured in `web-template` — Gap 16 / Recommendation 17
+- `waiting-for-ai` vs `action-ready` label mode distinction is not documented in the workflow — Gap 17 / Recommendation 18
+- Frontend PRs have no screenshot requirement and the bot container has no headless browser; Gap 18 / Recommendation 19 covers both the template gate and the k8s bot Dockerfile change needed
+
+**Repos requiring changes from this retro (see `06-template-audit.md` § Retro Follow-on Repo Map):**
+
+| Repo | What needs changing |
+|---|---|
+| `jemmy8oy/web-template` | Template / CLAUDE.md / workflow / hooks (Track A — all template gaps) |
+| `jemmy8oy/claude-code-telegram-k8s` | Infrastructure: max_turns, latest-comment prompt, ⚠️ notification, Playwright/screenshot deps |
+| `jemmy8oy/claude-code-telegram` | Core bot source: `_build_github_prompt()`, `stop_reason` detection |
+| `jemmy8oy/macro-metrics` | Project-level CLAUDE.md improvements (already in `main` once this PR merges) |
 
 ---
 
