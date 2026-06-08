@@ -55,6 +55,8 @@ The SDD process **worked well as a forcing function for upfront thinking**. The 
 6. **Assignee consistency** — ~65% of Phase 6 issues and PRs were created without assigning the developer, breaking GitHub notifications
 7. **action-ready relabelling** — developer had to manually re-apply the label after every AI pass, including timeouts
 8. **Multi-pass context** — the AI re-asked questions already answered in previous comments because it used the issue body as its prompt rather than the latest unanswered comment
+9. **Testing not enforced by ACs** — 200+ tests were produced but this relied on the AI choosing to apply the testing strategy; no issue AC mandated it
+10. **No AI guards / hooks** — structural quality rules (CSS formatting, branch discipline, assignee) were enforced by instruction only, with no automatic enforcement via Claude Code hooks
 
 See the sibling retro documents for detail on each area.
 
@@ -68,6 +70,12 @@ As a result of the post-retro discussion two follow-on issues were raised on the
 | [claude-code-telegram-k8s #34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) | Post ⚠️ GitHub comment + Telegram alert when iteration limit is hit; raise default `claudeMaxTurns` to 100 |
 
 These complement the template-level fixes in this retro. The ~80% of improvements that only require template / CLAUDE.md changes can be applied independently; the fork changes address the remaining ~20% that require infrastructure changes.
+
+A full audit of the `claude-code-telegram` bot's prompts and workflow was also completed (see `06-template-audit.md` Finding 15). Key confirmed findings: the bot passes only the issue body as the prompt (no comments), `force_new=True` ensures each trigger starts a completely fresh session, and there is no `stop_reason` detection for `max_turns`. Issues #33 and #34 above address these directly.
+
+**Additional findings from post-retro discussion (2026-06-08):**
+- Testing standards exist in `docs/specs/testing-strategy.md` but are not surfaced in issue ACs — Gap 15 / Recommendation 16
+- Claude Code supports `PreToolUse`/`PostToolUse` hooks (AI guards) equivalent to Cursor/Windsurf command hooks — not yet configured in `web-template` — Gap 16 / Recommendation 17
 
 ---
 

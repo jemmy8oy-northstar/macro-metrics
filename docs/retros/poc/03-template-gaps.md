@@ -339,6 +339,96 @@ This is tracked in **[claude-code-telegram-k8s #34](https://github.com/jemmy8oy/
 
 ---
 
+## Gap 15 — Testing Strategy Exists But Is Not Surfaced in Issue Templates
+
+**Where it hurt:** Testing coverage was inconsistent across phases. The `[3]` (Frontend MVP) issue body had no testing AC, and the `[5]` backend issues mentioned TDD but didn't link to `docs/specs/testing-strategy.md`. It was left to the AI's discretion whether tests were written.
+
+**Root cause:** The `web-template` has a `docs/specs/testing-strategy.md` with detailed guidance (Vitest + RTL for frontend; xUnit + Moq for backend; top-down TDD). But this document is only mentioned in a single table row in `CLAUDE.md` — it is never referenced from any issue body or acceptance criteria. `init-issues.mjs` issue bodies have no explicit testing ACs.
+
+**Evidence from MacroMetrics:**
+- Phase 4 frontend issues (#31–#38) were closed without confirming test coverage
+- The only CI reference is a generic "build + test on every PR" in the Phase 1b setup doc
+- 200+ tests were ultimately produced, but this relied on the AI choosing to write them — not on ACs requiring them
+
+**Proposed fix:**
+
+1. **In every `[3]` frontend issue body**, add:
+   ```markdown
+   ## Testing (mandatory — see `docs/specs/testing-strategy.md`)
+   - [ ] Each component has at least one Vitest test covering its key behaviour
+   - [ ] Tests are written spec-first (test before component)
+   - [ ] `npm test` passes with no failures before the PR is raised
+   ```
+
+2. **In every `[5]` backend feature issue body**, add:
+   ```markdown
+   ## Testing (mandatory — see `docs/specs/testing-strategy.md`)
+   - [ ] Unit test written first (TDD) for each new service method
+   - [ ] Integration test scenario defined (Phase 5) or implemented (end of Phase 6)
+   - [ ] `dotnet test` passes with no failures before the PR is raised
+   ```
+
+3. **In `CLAUDE.md`**, add:
+   ```markdown
+   ## Testing Standards (mandatory)
+   Before raising any PR:
+   - Backend: `dotnet test` must pass. Write tests before implementation (TDD).
+   - Frontend: `npm test` must pass. Vitest + RTL, one test per AC.
+   - Full strategy: `docs/specs/testing-strategy.md`
+   ```
+
+---
+
+## Gap 16 — No Claude Code Hooks (AI Guards) Configured in Web-Template
+
+**Where it hurt:** Several quality problems in the POC could have been caught automatically:
+- Hardcoded CSS colours (issue #39) — a post-write linter hook would have flagged or auto-fixed the pattern
+- Direct-to-main PRs (#80) — a pre-bash git hook could have blocked `git push origin main`
+- Missing `--assignee` — a post-create hook could verify the assignee was applied
+
+**What Claude Code hooks are:** Claude Code supports `PreToolUse` and `PostToolUse` hooks configured in `.claude/settings.json`. These are shell commands that run automatically before or after specific tool calls — the direct equivalent of Cursor/Windsurf command hooks. They run outside the AI's context window and cannot be overridden by AI instructions. This is the correct mechanism for structural enforcement that doesn't rely on the AI "remembering" a rule.
+
+**Example hooks for web-template (`.claude/settings.json`):**
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [{
+          "type": "command",
+          "command": "FILE=$CLAUDE_TOOL_INPUT_FILE_PATH; case \"$FILE\" in *.ts|*.tsx) npx prettier --write \"$FILE\" 2>/dev/null;; *.cs) dotnet format --include \"$FILE\" 2>/dev/null;; esac"
+        }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{
+          "type": "command",
+          "command": "if echo \"$CLAUDE_TOOL_INPUT_COMMAND\" | grep -qE 'git push.*(origin )?main'; then echo 'AI guard: direct push to main blocked. Target dev instead.' && exit 2; fi"
+        }]
+      }
+    ]
+  }
+}
+```
+
+**High-value hooks to add to web-template:**
+
+| Hook type | Trigger | Guard |
+|---|---|---|
+| PostToolUse | Write/Edit on `.ts`/`.tsx`/`.css` | Auto-run prettier |
+| PostToolUse | Write/Edit on `.cs` | Auto-run `dotnet format` |
+| PreToolUse | Bash matching `git push.*main` | Block direct-to-main push |
+| PostToolUse | Bash matching `gh issue create` without `--assignee` | Warn if assignee absent |
+
+**Proposed fix:**
+1. Add `.claude/settings.json` to `web-template` with linter and branch-guard hooks
+2. Add an "AI Guards" section to `CLAUDE.md` explaining the hook mechanism and listing active guards
+
+---
+
 ## Classification — Template vs Fork Changes
 
 All 14 gaps above fall into one of two categories:
@@ -360,6 +450,8 @@ All 14 gaps above fall into one of two categories:
 | Gap 11 — action-ready relabelling friction (partial) | `CLAUDE.md` multi-pass rule |
 | Gap 12 — Session memory (partial) | `CLAUDE.md` pass summary instruction |
 | Gap 13 — Multi-pass behaviour (partial) | `CLAUDE.md` multi-pass instruction |
+| Gap 15 — Testing strategy not in issue ACs | `web-template` `[3]` + `[5]` issue bodies; `CLAUDE.md` testing standards |
+| Gap 16 — No Claude Code hooks | `web-template` `.claude/settings.json` + `CLAUDE.md` AI Guards section |
 
 ### Requires fork-level changes
 
@@ -391,3 +483,5 @@ Fork issues raised: [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/i
 | Gap 12 — Session memory / context re-discovery | Medium (token waste, repeated questions) | Medium | 🟠 Medium |
 | Gap 13 — Bot uses issue body, not latest unanswered comment | High (re-asks answered questions) | Low (CLAUDE.md) / Medium (fork) | 🔴 High |
 | Gap 14 — No visibility when max_turns hit | Medium (silent failures) | Low (fork) | 🟠 Medium |
+| Gap 15 — Testing strategy not surfaced in issue ACs | Medium (inconsistent test coverage) | Low | 🟠 Medium |
+| Gap 16 — No Claude Code hooks / AI guards | Medium (preventable quality issues) | Low | 🟠 Medium |

@@ -365,6 +365,75 @@ This turns a silent failure into a clear, actionable signal.
 
 ---
 
+## Recommendation 16 — Surface Testing Standards in Issue ACs
+
+**From the discussion:** The web template doesn't prominently mandate testing in its issue templates. The `testing-strategy.md` exists but is not referenced from issue acceptance criteria — testing happens only if the AI decides to apply the strategy.
+
+**Fix:** Add explicit testing ACs to every `[3]` and `[5]` issue body in the template. This moves testing from "a document the AI should remember to read" to "a checklist item on every issue that must be ticked before the PR is raised."
+
+```markdown
+## Testing (mandatory — see `docs/specs/testing-strategy.md`)
+- [ ] [Frontend] `npm test` passes — at least one Vitest test per component
+- [ ] [Backend] `dotnet test` passes — unit tests written TDD, integration scenario defined
+```
+
+**Also add to `CLAUDE.md`:**
+```markdown
+## Testing Standards (mandatory)
+Before raising any PR, all tests must pass. Tests are not optional:
+- Backend: TDD (test first). Run `dotnet test` — zero failures.
+- Frontend: Spec-first (test before component). Run `npm test` — zero failures.
+- See `docs/specs/testing-strategy.md` for examples and conventions.
+```
+
+This is a low-effort, high-impact change that ensures the AI always checks the testing requirement before closing a PR.
+
+---
+
+## Recommendation 17 — Add Claude Code Hooks as AI Guards
+
+**From the discussion:** The developer asked whether "command hooks in Windsurf/Cursor" exist in Claude Code. Yes — Claude Code has `PreToolUse` and `PostToolUse` hooks in `.claude/settings.json`.
+
+**What hooks are:** Shell commands that run automatically before or after Claude's tool calls. They run outside the AI's context and cannot be overridden by AI instructions. They are the correct mechanism for structural enforcement that doesn't rely on the AI "remembering" a rule — analogous to git pre-commit hooks or Cursor's command hooks.
+
+**Example: linter hook (PostToolUse on Write/Edit):**
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Write|Edit",
+      "hooks": [{
+        "type": "command",
+        "command": "FILE=$CLAUDE_TOOL_INPUT_FILE_PATH; case \"$FILE\" in *.ts|*.tsx|*.css) npx prettier --write \"$FILE\" 2>/dev/null;; *.cs) dotnet format --include \"$FILE\" 2>/dev/null;; esac"
+      }]
+    }],
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "if echo \"$CLAUDE_TOOL_INPUT_COMMAND\" | grep -qE 'git push.*(origin )?main'; then echo 'AI guard: direct push to main blocked.' && exit 2; fi"
+      }]
+    }]
+  }
+}
+```
+
+**Guards this enables (for free, no AI instruction needed):**
+
+| Problem from POC | Hook that prevents it |
+|---|---|
+| Hardcoded CSS colours (#39) | PostToolUse prettier on `.css`/`.tsx` — enforces formatting |
+| Direct-to-main PR (#80) | PreToolUse bash guard on `git push.*main` |
+| Missing `--assignee` (#10) | PostToolUse bash check after `gh issue create` |
+
+**Implementation:**
+1. Add `.claude/settings.json` with the linter + branch-guard hooks to `web-template`
+2. Add an "AI Guards" section to `web-template/CLAUDE.md` listing the active hooks and explaining the mechanism
+
+This is a Track A change (template-only, no fork code needed).
+
+---
+
 ## Implementation Classification — Template vs Fork
 
 All 15 recommendations fall into one of two tracks. This matters for sequencing: template changes can be applied immediately; fork changes require a code PR on `claude-code-telegram-k8s`.
@@ -387,6 +456,8 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 12 — Self-relabelling on partial completion | `CLAUDE.md` multi-pass block |
 | 13 — Structured pass summaries | `CLAUDE.md` agent conventions |
 | 14 — Multi-pass context (partial) | `CLAUDE.md` multi-pass block |
+| 16 — Surface testing in issue ACs | `web-template` `[3]` + `[5]` issue bodies; `CLAUDE.md` testing section |
+| 17 — Claude Code hooks / AI guards | `web-template` `.claude/settings.json` + `CLAUDE.md` AI Guards section |
 
 ### Track B — Fork-level changes (require PR on `claude-code-telegram-k8s`)
 
@@ -415,6 +486,8 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 8 — Retro phase | Medium | Low | Template | 🟠 Next sprint |
 | 4 — Split [3a] | Medium | Low | Template | 🟠 Next sprint |
 | 13 — Structured pass summaries | Medium | Medium | Template | 🟠 Next sprint |
+| 16 — Surface testing in issue ACs | High | Low | Template | 🟠 Next sprint |
+| 17 — Claude Code hooks / AI guards | Medium | Low | Template | 🟠 Next sprint |
 | 3 — Phase Guard comments | Medium | Low | Template | 🟡 Nice to have |
 | 9 — Clarification protocol | Medium | Low | Template | 🟡 Nice to have |
 | 10 — Assume vs Ask mode | Low | Low | Template | 🟡 Nice to have |

@@ -325,6 +325,131 @@ These fork changes complement the template changes in this audit: the template c
 
 ---
 
+## Finding 13 — Testing Strategy Not Referenced in Issue ACs
+
+**File:** `web-template/scripts/init-issues.mjs` (the `[3]` and `[5]` issue bodies)
+
+**Context from post-retro discussion:** The developer noted the web template "does not talk about testing at all." The `docs/specs/testing-strategy.md` exists and is comprehensive, but:
+- It is referenced in only one `CLAUDE.md` table row
+- The `[3]` (Frontend MVP) issue body has no testing AC
+- The `[5]` (Backend feature) issue body mentions TDD but doesn't link the strategy doc
+- No issue AC includes a "tests must pass before PR is raised" gate
+
+**Proposed changes to `init-issues.mjs`:**
+
+Add to the `[3]` issue body template:
+```markdown
+## Testing (mandatory — see `docs/specs/testing-strategy.md`)
+- [ ] Each component has at least one Vitest + RTL test covering its key behaviour
+- [ ] Tests are written spec-first (test before component)
+- [ ] `npm test` runs with zero failures before the PR is raised
+```
+
+Add to each `[5]` issue body template:
+```markdown
+## Testing (mandatory — see `docs/specs/testing-strategy.md`)
+- [ ] Unit test written first (TDD) for each new service method — tests green before implementation proceeds
+- [ ] Integration test scenario defined (Phase 5) or implemented (end of Phase 6)
+- [ ] `dotnet test` runs with zero failures before the PR is raised
+```
+
+Add to `CLAUDE.md` (new "Testing Standards" section):
+```markdown
+## Testing Standards (mandatory)
+
+Before raising any PR, all tests must pass. Testing is never optional.
+- Backend: Write tests first (TDD). `dotnet test` — zero failures.
+- Frontend: Write tests spec-first. `npm test` — zero failures.
+- Strategy + examples: `docs/specs/testing-strategy.md`
+```
+
+---
+
+## Finding 14 — Claude Code Hooks (AI Guards) Not Configured
+
+**File:** `web-template` (missing file: `.claude/settings.json`)
+
+**Context from post-retro discussion:** The developer asked whether "command hooks in Windsor/Cursor" exist in Claude Code — they do. Claude Code supports `PreToolUse` and `PostToolUse` hooks in `.claude/settings.json`. These are shell commands that run automatically before/after specific tool calls, outside the AI's context window, and cannot be overridden by AI instructions.
+
+**POC problems this would have prevented:**
+
+| Issue | Hook type | Guard |
+|---|---|---|
+| Hardcoded CSS colours (#39) | PostToolUse on Write/Edit `.css`/`.tsx` | Auto-prettier — flags or fixes formatting |
+| Direct-to-main push (#80) | PreToolUse on Bash | Block `git push.*main` |
+| Missing `--assignee` | PostToolUse on Bash | Warn when `gh issue create` lacks `--assignee` |
+
+**Proposed new file:** `web-template/.claude/settings.json`
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [{
+          "type": "command",
+          "command": "FILE=$CLAUDE_TOOL_INPUT_FILE_PATH; case \"$FILE\" in *.ts|*.tsx|*.css) npx prettier --write \"$FILE\" 2>/dev/null || true;; *.cs) dotnet format --include \"$FILE\" 2>/dev/null || true;; esac"
+        }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{
+          "type": "command",
+          "command": "if echo \"$CLAUDE_TOOL_INPUT_COMMAND\" | grep -qE 'git push.*(origin )?main'; then echo 'AI guard: direct push to main is blocked. Raise a PR against dev instead.' && exit 2; fi"
+        }]
+      }
+    ]
+  }
+}
+```
+
+**Proposed addition to `CLAUDE.md`:**
+```markdown
+## AI Guards (Claude Code Hooks)
+
+The `.claude/settings.json` in this repo defines shell hooks that run automatically before/after Claude's tool calls. These are structural guards — they enforce rules that cannot be overridden by AI instructions.
+
+Active guards:
+- **Linter (PostToolUse):** `prettier` runs after every `.ts`/`.tsx`/`.css` write. `dotnet format` runs after every `.cs` write.
+- **Branch guard (PreToolUse):** `git push` to `main` is blocked. Target `dev`.
+
+Do not modify or remove these guards. If a guard is triggering incorrectly, raise an issue.
+```
+
+---
+
+## Finding 15 — Bot Prompt Audit: Issue Body Used as Prompt, Comments Not Fetched
+
+**File:** `claude-code-telegram` source — `src/events/handlers.py` (`_build_github_prompt`)
+
+**Context from post-retro discussion:** The developer asked for a review of the claude-code-telegram bot repo to identify friction sources. A full audit of the prompts and workflow was completed.
+
+**Key findings from `_build_github_prompt()` (the core prompt builder):**
+
+| Finding | Code evidence | Impact |
+|---|---|---|
+| Issue prompt passes only `issue.get('body')` | `handlers.py` line — `f"Body:\n{issue.get('body')...}"` | AI doesn't see comments from previous passes — explains re-asking pattern |
+| PR prompt passes only `pr.get('body')` | `handlers.py` — `f"Description:\n{pr.get('body')...}"` | AI must self-discover review comments via `gh pr review` |
+| No comments fetched from GitHub API | Entire `_build_github_prompt()` constructs prompt from payload only | Root cause of multi-pass context loss |
+| `force_new=True` on every trigger | `_run_github_task()` call | Each trigger is a fully fresh session — no continuity |
+| No `stop_reason` detection | Not present in `handlers.py` or `sdk_integration.py` | Silent `max_turns` failures — no ⚠️ comment posted |
+
+**`waiting-for-ai` vs `action-ready` mode:**
+- `waiting-for-ai` on issues → discussion mode: "respond with a comment... do NOT start implementing"
+- `action-ready` on issues → implementation mode: "implement the task... raise a PR"
+- **Potential friction:** If the developer uses `waiting-for-ai` to ask a follow-up on an in-progress issue (common), the bot goes into discussion mode and will not implement — the developer should use `action-ready` to trigger continued implementation
+
+**Confirmed fork issues from audit:**
+- [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) — fetch comments + use latest unanswered as prompt (fixes re-asking)
+- [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) — detect `stop_reason == "max_turns"` + post ⚠️ comment (fixes silent failures)
+
+**Also noted — `waiting-for-ai` mode clarification:**
+The prompt currently says "do NOT start implementing" for `waiting-for-ai` issues. This is correct for first-contact (discussion phase) but may be wrong for re-triggers during multi-pass implementation. Consider adding a label variant (e.g., `waiting-for-ai-continue`) that triggers implementation mode without requiring `action-ready`. This is a fork-level change.
+
+---
+
 ## Summary — File Change Map
 
 | File | Change type | Priority |
@@ -342,3 +467,7 @@ These fork changes complement the template changes in this audit: the template c
 | All PR templates | Add Assumptions & Decisions table | 🟠 High |
 | Fork: `claude-code-telegram-k8s` | [#33] per-label max_turns + latest-comment-as-prompt | 🔴 Critical |
 | Fork: `claude-code-telegram-k8s` | [#34] max_turns visibility + raise default limit | 🔴 Critical |
+| `scripts/init-issues.mjs` (`[3]` + `[5]` body) | Add testing ACs + link to `testing-strategy.md` | 🟠 High |
+| `CLAUDE.md` | Add Testing Standards section | 🟠 High |
+| `web-template` `.claude/settings.json` | New file — linter + branch-guard hooks | 🟠 High |
+| `CLAUDE.md` | Add AI Guards section describing active hooks | 🟠 High |
