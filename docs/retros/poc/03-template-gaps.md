@@ -286,6 +286,93 @@ Introduce a `action-in-progress` label that the AI sets when it starts work, and
 
 ---
 
+## Gap 13 — Bot Uses Issue Body as Prompt, Not Latest Unanswered Comment
+
+**Where it hurt:** Issue #88 (this retrospective) — the bot was triggered twice and on the second trigger re-started its full analysis from scratch, re-asking questions that had already been answered in comments. The developer answered the clarifying questions from the first run, but the second trigger ignored those answers entirely.
+
+**Root cause:** The fork's webhook handler passes the **issue body** as the task prompt every time the bot is triggered — it does not check whether there are unanswered questions already in the comment thread, or whether a previous pass left a partial summary. This is a two-part problem:
+
+| Layer | Problem |
+|---|---|
+| CLAUDE.md (template) | The AI is not instructed to read all existing comments before posting |
+| Fork code | The webhook always uses the issue body as the prompt, never the latest unanswered human comment |
+
+**CLAUDE.md fix (addressable now):**
+Add a multi-pass behaviour instruction to `CLAUDE.md`:
+```markdown
+## Multi-pass Issue Behaviour
+
+Before posting any comment on an issue, read ALL existing comments in full.
+- If you have already proposed a plan or analysis: do not repeat it — continue from where you left off
+- If you have asked clarifying questions and the owner has answered them: proceed with the implementation using those answers
+- If a previous pass left a structured summary comment: read that summary first and skip re-reading files already listed there
+```
+
+**Fork fix (required for a complete resolution):**
+The webhook handler should be updated to:
+1. Fetch all comments on the issue
+2. Find the latest unanswered human comment (a comment from the repo owner that was posted after the last bot comment)
+3. If one exists, use it as the task prompt instead of the issue body
+
+This is tracked in **[claude-code-telegram-k8s #33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33)**.
+
+---
+
+## Gap 14 — No Visibility When max_turns Limit Is Hit
+
+**Where it hurt:** Issue #57 — the implementation timed out mid-task. The developer's only signal was the absence of a completion message. There was no indication of what had been done before the timeout, or what the developer should do next (e.g. re-apply `action-ready`).
+
+**Root cause:** The fork's agent runner does not distinguish between a clean exit (task complete) and a max_turns exit (task incomplete because of iteration limit). Both outcomes post the same completion message — or in some cases, no message at all.
+
+**CLAUDE.md partial fix:**
+A self-relabelling rule on partial completion helps (see Gap 11 / Recommendation 12), but the AI may not have an opportunity to run that cleanup code when max_turns is hit abruptly.
+
+**Fork fix (required for meaningful visibility):**
+The fork should detect `stop_reason == "max_turns"` from the SDK `ResultMessage` and:
+1. Post a distinct ⚠️ GitHub comment: *"Claude reached its iteration limit. Re-apply `waiting-for-ai` to continue from where this pass left off."*
+2. Send a Telegram alert (separate from the normal completion notification)
+3. Do **not** remove the `waiting-for-ai` label when the limit is hit — the default of removing it means the developer has to re-apply manually with no explanation of why
+
+Additionally, the default `claudeMaxTurns` value should be raised from its current low default (~20–50) to at least **100** to reduce how often orchestrator-level issues hit the limit.
+
+This is tracked in **[claude-code-telegram-k8s #34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34)**.
+
+---
+
+## Classification — Template vs Fork Changes
+
+All 14 gaps above fall into one of two categories:
+
+### Addressable via template / CLAUDE.md (no fork code change required)
+
+| Gap | Fix location |
+|---|---|
+| Gap 1 — DB questionnaire field | `web-template` `[1d]` issue body |
+| Gap 2 — Data source validation | `web-template` `[5a]` AC + `[1d]` questionnaire |
+| Gap 3 — [3a] broader brief | `web-template` `[3]` issue body |
+| Gap 4 — Real vs stub enforcement | `web-template` `[6]` fetcher story template |
+| Gap 5 — Deployment phase | `web-template` `docs/ai-workflow.md` + `sdd-workflow.md` |
+| Gap 6 — Dependency check noise | `CLAUDE.md` agent conventions section |
+| Gap 7 — Assumptions section in PR | `CLAUDE.md` PR template convention |
+| Gap 8 — Retro phase | `web-template` `docs/sdd-workflow.md` |
+| Gap 9 — CSS standards | `CLAUDE.md` frontend standards section |
+| Gap 10 — Assignee not consistently set | `CLAUDE.md` notification rule + `init-issues.mjs` |
+| Gap 11 — action-ready relabelling friction (partial) | `CLAUDE.md` multi-pass rule |
+| Gap 12 — Session memory (partial) | `CLAUDE.md` pass summary instruction |
+| Gap 13 — Multi-pass behaviour (partial) | `CLAUDE.md` multi-pass instruction |
+
+### Requires fork-level changes
+
+| Gap | Fork change |
+|---|---|
+| Gap 11 — iteration limit per issue type | `values.yaml` `claudeMaxTurnsByLabel` map |
+| Gap 13 — latest comment as prompt | `_build_github_prompt()` — fetch comments, find latest unanswered |
+| Gap 14 — max_turns limit visibility | Detect `stop_reason == "max_turns"`, post ⚠️ comment + Telegram alert |
+
+Fork issues raised: [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) · [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34)
+
+---
+
 ## Summary of Proposed Template Changes
 
 | Gap | Impact | Effort | Priority |
@@ -302,3 +389,5 @@ Introduce a `action-in-progress` label that the AI sets when it starts work, and
 | Gap 10 — Assignee not consistently set | High (missed notifications) | Low | 🔴 High |
 | Gap 11 — action-ready relabelling friction | Medium (developer overhead) | Low | 🟠 Medium |
 | Gap 12 — Session memory / context re-discovery | Medium (token waste, repeated questions) | Medium | 🟠 Medium |
+| Gap 13 — Bot uses issue body, not latest unanswered comment | High (re-asks answered questions) | Low (CLAUDE.md) / Medium (fork) | 🔴 High |
+| Gap 14 — No visibility when max_turns hit | Medium (silent failures) | Low (fork) | 🟠 Medium |

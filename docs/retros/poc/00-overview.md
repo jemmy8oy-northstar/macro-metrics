@@ -50,12 +50,24 @@ The SDD process **worked well as a forcing function for upfront thinking**. The 
 1. **Template gaps** — questions the AI kept re-asking because they weren't captured in the spec questionnaire
 2. **Branch discipline** — direct-to-main PRs caused a significant `main`/`dev` drift incident
 3. **Assumption surfacing** — the AI made assumptions that were sometimes wrong (e.g. FRED hosting CAPE), leading to bug issues
-4. **Timeout/chunking** — one issue (#57) timed out because the task was too complex for a single AI run
+4. **Timeout/chunking** — one issue (#57) timed out because the task was too complex for a single AI run; there was no visibility that the limit was hit
 5. **Dependency checking noise** — the AI re-checked dependency conditions multiple times per issue, adding friction
 6. **Assignee consistency** — ~65% of Phase 6 issues and PRs were created without assigning the developer, breaking GitHub notifications
 7. **action-ready relabelling** — developer had to manually re-apply the label after every AI pass, including timeouts
+8. **Multi-pass context** — the AI re-asked questions already answered in previous comments because it used the issue body as its prompt rather than the latest unanswered comment
 
 See the sibling retro documents for detail on each area.
+
+### Follow-on actions raised during retro review
+
+As a result of the post-retro discussion two follow-on issues were raised on the underlying fork:
+
+| Issue | What it fixes |
+|---|---|
+| [claude-code-telegram-k8s #33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) | per-label `max_turns` config; use latest unanswered comment as task prompt (fixes re-asking pattern) |
+| [claude-code-telegram-k8s #34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) | Post ⚠️ GitHub comment + Telegram alert when iteration limit is hit; raise default `claudeMaxTurns` to 100 |
+
+These complement the template-level fixes in this retro. The ~80% of improvements that only require template / CLAUDE.md changes can be applied independently; the fork changes address the remaining ~20% that require infrastructure changes.
 
 ---
 
@@ -89,3 +101,4 @@ During the retro, the developer raised several questions about increasing AI aut
 | [03-template-gaps.md](./03-template-gaps.md) | Template gaps and specific improvement proposals |
 | [04-technical.md](./04-technical.md) | Technical decisions, bugs, and implementation quality |
 | [05-recommendations.md](./05-recommendations.md) | Concrete recommendations for the next project |
+| [06-template-audit.md](./06-template-audit.md) | Specific file-by-file changes needed in `web-template` |

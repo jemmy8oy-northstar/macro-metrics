@@ -323,20 +323,98 @@ This dramatically reduces the startup overhead of pass N+1 — the AI reads the 
 
 ---
 
+## Recommendation 14 — Multi-pass Context: Read All Comments Before Responding
+
+**From the discussion:** The bot was triggered on issue #88 twice. On the second trigger it re-started its full analysis from scratch and re-asked questions the developer had already answered. The root cause is that the bot receives the issue body as its prompt, not the conversation so far.
+
+**Two-layer fix:**
+
+**Layer 1 — CLAUDE.md instruction (implement now):**
+```markdown
+## Multi-pass Issue Behaviour
+
+Before posting any comment on an issue, read ALL existing comments in full.
+- If you have already asked clarifying questions and the owner has answered them: proceed with the implementation. Do not re-ask.
+- If you have already proposed a plan or analysis: do not repeat it — continue from where you left off.
+- If a previous pass left a structured summary comment: read that summary first and skip re-reading files already listed there.
+```
+
+This won't achieve a perfect fix (the agent still re-reads files), but it eliminates the "re-ask answered questions" failure mode and is a zero-effort change.
+
+**Layer 2 — Fork change (tracked in [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33)):**
+The webhook handler should find the latest unanswered human comment and use it as the task prompt rather than always using the issue body. This is the complete fix.
+
+---
+
+## Recommendation 15 — Make max_turns Failures Visible
+
+**From the discussion:** When the AI hits its iteration limit, there is currently no signal to the developer other than silence. The developer must infer something went wrong from the absence of a completion message.
+
+**Two-layer fix:**
+
+**Layer 1 — Raise the default limit (fork config change, low risk):**
+Raise the default `claudeMaxTurns` from the current ~20–50 to **100**. Orchestrator issues (`[1c]`, `[3a]`, `[5a]`) and complex implementation issues regularly need more turns than the current default allows.
+
+**Layer 2 — Post a ⚠️ comment when the limit is hit (tracked in [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34)):**
+The fork should detect `stop_reason == "max_turns"` and:
+1. Post a GitHub comment: *"⚠️ Claude reached its iteration limit on this pass. Re-apply `waiting-for-ai` to continue."*
+2. Send a distinct Telegram notification (not a normal completion message)
+3. Do **not** remove the `waiting-for-ai` label — the developer should be prompted to re-trigger, not left wondering why the label is gone
+
+This turns a silent failure into a clear, actionable signal.
+
+---
+
+## Implementation Classification — Template vs Fork
+
+All 15 recommendations fall into one of two tracks. This matters for sequencing: template changes can be applied immediately; fork changes require a code PR on `claude-code-telegram-k8s`.
+
+### Track A — Template / CLAUDE.md only (no fork code needed)
+
+| Rec | Change location |
+|---|---|
+| 1 — Extended [1c] questionnaire | `web-template` `[1d]` issue body |
+| 2 — Assumptions & Decisions PR section | `CLAUDE.md` PR convention block |
+| 3 — Phase Guard comments | `CLAUDE.md` agent conventions |
+| 4 — Split [3a] into tech + stories | `web-template` `[3]` issue body |
+| 5 — Data source validation in [5a] | `web-template` `[5a]` AC + `[1d]` questionnaire |
+| 6 — Branch enforcement (workflow file) | `web-template` `.github/workflows/` |
+| 7 — Deployment phase | `web-template` `docs/ai-workflow.md` + `sdd-workflow.md` |
+| 8 — Retro phase | `web-template` `docs/sdd-workflow.md` |
+| 9 — Clarification protocol | `CLAUDE.md` |
+| 10 — Assume vs Ask mode | `CLAUDE.md` + `web-template` `[1d]` questionnaire |
+| 11 — Always assign repository owner | `CLAUDE.md` + `web-template` `init-issues.mjs` |
+| 12 — Self-relabelling on partial completion | `CLAUDE.md` multi-pass block |
+| 13 — Structured pass summaries | `CLAUDE.md` agent conventions |
+| 14 — Multi-pass context (partial) | `CLAUDE.md` multi-pass block |
+
+### Track B — Fork-level changes (require PR on `claude-code-telegram-k8s`)
+
+| Rec | Fork change | Tracked |
+|---|---|---|
+| 12 — per-label `max_turns` config | `values.yaml` `claudeMaxTurnsByLabel` map | [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) |
+| 14 — Latest comment as task prompt | `_build_github_prompt()` — fetch + find latest unanswered comment | [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) |
+| 15 — max_turns visibility + limit increase | `stop_reason` detection; ⚠️ comment + Telegram alert; raise default | [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) |
+
+---
+
 ## Summary Priority Matrix
 
-| Recommendation | Impact | Effort | Priority |
-|---|---|---|---|
-| 1 — Extended [1c] questionnaire | High | Low | 🔴 Do first |
-| 2 — Assumptions PR section | High | Low | 🔴 Do first |
-| 5 — Data source validation in [5a] | High | Low | 🔴 Do first |
-| 6 — Dev-first branch workflow | High | Low | 🔴 Do first |
-| 11 — Always assign repository owner | High | Low | 🔴 Do first |
-| 7 — Deployment phase | High | Medium | 🟠 Next sprint |
-| 12 — Reduce action-ready relabelling | Medium | Low | 🟠 Next sprint |
-| 8 — Retro phase | Medium | Low | 🟠 Next sprint |
-| 4 — Split [3a] | Medium | Low | 🟠 Next sprint |
-| 13 — Structured pass summaries | Medium | Medium | 🟠 Next sprint |
-| 3 — Phase Guard comments | Medium | Low | 🟡 Nice to have |
-| 9 — Clarification protocol | Medium | Low | 🟡 Nice to have |
-| 10 — Assume vs Ask mode | Low | Low | 🟡 Nice to have |
+| Recommendation | Impact | Effort | Track | Priority |
+|---|---|---|---|---|
+| 1 — Extended [1c] questionnaire | High | Low | Template | 🔴 Do first |
+| 2 — Assumptions PR section | High | Low | Template | 🔴 Do first |
+| 5 — Data source validation in [5a] | High | Low | Template | 🔴 Do first |
+| 6 — Dev-first branch workflow | High | Low | Template | 🔴 Do first |
+| 11 — Always assign repository owner | High | Low | Template | 🔴 Do first |
+| 14 — Multi-pass context (CLAUDE.md part) | High | Low | Template | 🔴 Do first |
+| 14 — Latest comment as prompt | High | Medium | Fork (#33) | 🔴 Do first |
+| 15 — max_turns visibility + limit increase | Medium | Low | Fork (#34) | 🔴 Do first |
+| 7 — Deployment phase | High | Medium | Template | 🟠 Next sprint |
+| 12 — Reduce action-ready relabelling | Medium | Low | Template + Fork | 🟠 Next sprint |
+| 8 — Retro phase | Medium | Low | Template | 🟠 Next sprint |
+| 4 — Split [3a] | Medium | Low | Template | 🟠 Next sprint |
+| 13 — Structured pass summaries | Medium | Medium | Template | 🟠 Next sprint |
+| 3 — Phase Guard comments | Medium | Low | Template | 🟡 Nice to have |
+| 9 — Clarification protocol | Medium | Low | Template | 🟡 Nice to have |
+| 10 — Assume vs Ask mode | Low | Low | Template | 🟡 Nice to have |
