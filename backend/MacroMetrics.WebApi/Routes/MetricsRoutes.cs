@@ -36,9 +36,9 @@ public static class MetricsRoutes
 
             var response = new
             {
-                numeratorId    = ratio.NumeratorId,
-                denominatorId  = ratio.DenominatorId,
-                points         = ratio.Points.Select(p => new { date = p.Date, value = p.Value }),
+                numerator      = ratio.NumeratorId,
+                denominator    = ratio.DenominatorId,
+                series         = ratio.Points.Select(p => new { date = p.Date, value = p.Value }),
                 longRunAverage = ratio.LongRunAverage
             };
 
@@ -46,6 +46,27 @@ public static class MetricsRoutes
         })
         .WithName("GetMetricRatio")
         .WithSummary("Ratio series for two metrics (numerator / denominator). Optional 'from' and 'to' (yyyy-MM-dd) parameters filter the returned data points while longRunAverage always reflects the full historical record.");
+
+        group.MapGet("indicator/{id}", (string id, IMetricSeriesService seriesService) =>
+        {
+            var series = seriesService.GetSeries(id);
+
+            if (series is null) return Results.NotFound();
+
+            var points = series.Points.Select(p => new { date = p.Date, value = p.Value }).ToList();
+            var response = new
+            {
+                id             = series.Id,
+                label          = series.Label,
+                unit           = series.Unit,
+                longRunAverage = points.Count > 0 ? Math.Round(points.Average(p => p.value), 2) : 0.0,
+                series         = points
+            };
+
+            return Results.Ok(response);
+        })
+        .WithName("GetMetricIndicator")
+        .WithSummary("Indicator series with long-run average for a single metric.");
 
         group.MapGet("{id}", (string id, IMetricSeriesService seriesService) =>
         {
