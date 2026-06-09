@@ -37,7 +37,7 @@ apps:
       port: 80
       targetPort: 8080
     ingress:
-      path: /api
+      path: /macro-metrics/api
       pathType: Prefix
     env:
       - name: YFINANCE__SidecarBaseUrl
@@ -63,7 +63,7 @@ apps:
       port: 80
       targetPort: 80
     ingress:
-      path: /
+      path: /macro-metrics
       pathType: Prefix
     resources: {}
     nodeSelector: {}
