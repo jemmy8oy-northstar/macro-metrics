@@ -1,5 +1,5 @@
 apiVersion: v2
-name: web-app-helm
+name: macro-metrics
 description: A generic Helm chart for deploying a .NET backend + React frontend monorepo
 type: application
 version: 0.1.0
