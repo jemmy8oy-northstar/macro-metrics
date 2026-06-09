@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "web-app-helm.fullname" $ }}-{{ .name }}
+  name: {{ include "macro-metrics.fullname" $ }}-{{ .name }}
   labels:
     app: {{ .name }}
 spec:
@@ -14,6 +14,7 @@ spec:
     metadata:
       labels:
         app: {{ .name }}
+        release: {{ $.Release.Name }}
     spec:
       {{- if $.Values.imagePullSecrets }}
       imagePullSecrets:
