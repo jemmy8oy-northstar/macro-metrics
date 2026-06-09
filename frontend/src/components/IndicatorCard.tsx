@@ -1,5 +1,5 @@
 import { useGetIndicatorQuery } from "../api/metricsApi";
-import { LineChart, Line, ReferenceLine, ResponsiveContainer, Tooltip } from "recharts";
+import { LineChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { format, parseISO } from "date-fns";
 import type { IndicatorConfig } from "../data/indicators";
 import "./IndicatorCard.css";
@@ -41,6 +41,7 @@ export function IndicatorCard({ indicator }: { indicator: IndicatorConfig }) {
       <p className="indicator-card__pct">{pctFromAvg(current, data.longRunAverage)}</p>
       <ResponsiveContainer width="100%" height={90}>
         <LineChart data={data.series}>
+          <XAxis dataKey="date" hide />
           <Tooltip
             contentStyle={{ background: "#1e1e24", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: "0.75rem" }}
             formatter={(v) => [Number(v).toFixed(2) + data.unit, "Value"]}

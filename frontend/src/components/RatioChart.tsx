@@ -33,10 +33,8 @@ export function RatioChart({ series, mode, unit = "×" }: Props) {
       <ResponsiveContainer width="100%" height={isCompact ? 160 : 320}>
         <LineChart data={visible} margin={{ top: 8, right: isCompact ? 8 : 56, left: isCompact ? -32 : 0, bottom: 0 }}>
           {!isCompact && <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />}
-          {!isCompact && (
-            <XAxis dataKey="date" tickFormatter={(d) => format(parseISO(d), "MMM yy")}
-              tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} minTickGap={60} />
-          )}
+          <XAxis dataKey="date" hide={isCompact} tickFormatter={(d) => format(parseISO(d), "MMM yy")}
+            tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} minTickGap={60} />
           {!isCompact && (
             <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false}
               tickFormatter={(v) => v.toFixed(1) + unit} width={48} />
