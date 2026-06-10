@@ -59,6 +59,7 @@ The SDD process **worked well as a forcing function for upfront thinking**. The 
 10. **No AI guards / hooks** — structural quality rules (CSS formatting, branch discipline, assignee) were enforced by instruction only, with no automatic enforcement via Claude Code hooks
 11. **`waiting-for-ai` vs `action-ready` confusion** — the two labels trigger fundamentally different bot modes (discussion-only vs full implementation). Using the wrong label at a re-trigger point sent the bot into the wrong mode with no visible signal to the developer
 12. **No screenshot gate for frontend PRs** — frontend changes were merged without visual evidence; the bot container also lacks a headless browser, making automated screenshot capture impossible
+13. **CI/CD pipelines not in template** — testing and deployment pipelines had to be added manually during the POC. The `ci.yml` (unit, integration, E2E tests) and `docker-build-push.yml` (OCIR push) workflows did not exist on day one. `deploy.sh` served as a manual workaround until the pipeline was wired up; once the pipeline is in the template it becomes redundant and should be removed
 
 See the sibling retro documents for detail on each area.
 
@@ -80,6 +81,7 @@ A full audit of the `claude-code-telegram` bot's prompts and workflow was also c
 - Claude Code supports `PreToolUse`/`PostToolUse` hooks (AI guards) equivalent to Cursor/Windsurf command hooks — not yet configured in `web-template` — Gap 16 / Recommendation 17
 - `waiting-for-ai` vs `action-ready` label mode distinction is not documented in the workflow — Gap 17 / Recommendation 18
 - Frontend PRs have no screenshot requirement and the bot container has no headless browser; Gap 18 / Recommendation 19 covers both the template gate and the k8s bot Dockerfile change needed
+- CI/CD pipelines (`ci.yml` for tests; `docker-build-push.yml` for deployment) were added manually during the POC — they should be in `web-template` by default; `deploy.sh` (the manual precursor) should be removed — Gap 19 / Recommendation 20
 
 **Repos requiring changes from this retro (see `06-template-audit.md` § Retro Follow-on Repo Map):**
 

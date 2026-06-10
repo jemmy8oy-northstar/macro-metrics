@@ -502,6 +502,44 @@ This is tracked as a new issue to be raised on `claude-code-telegram-k8s`.
 
 ---
 
+## Gap 19 — CI/CD Pipelines Not Included in Template; `deploy.sh` Manual Workaround
+
+**Severity:** 🔴 High
+
+**Observed behaviour:** The `ci.yml` (unit tests, integration tests, E2E tests) and `docker-build-push.yml` (OCIR image push on merge to `main`) workflows were created manually during the POC rather than being part of the project scaffold. There was no CI from day one — tests passed or failed locally with no automated gate on PRs. Deployment was handled by `deploy.sh`, a local shell script requiring the developer's workstation to have `docker buildx`, `oci` CLI, and `kubectl` configured. This script is now fully superseded by `docker-build-push.yml`.
+
+**Root cause:** `web-template` ships no `.github/workflows/` directory.
+
+**Impact:**
+- Tests weren't run automatically on PRs for the first half of the POC; bugs that tests would have caught were merged.
+- Deployment required the developer to remember to run `deploy.sh` manually; the pipeline enforces this on every merge to `main`.
+- `deploy.sh` contains project-specific hardcoded values (registry namespace, compartment ID, app name) that need updating per project — the GitHub Actions workflow parameterises these as repo vars/secrets, making it safer.
+
+**Proposed fix — `web-template`:**
+
+Add both workflows to `web-template/.github/workflows/` as part of the initial scaffold:
+
+```
+web-template/
+  .github/
+    workflows/
+      ci.yml               ← test gate on all PRs and pushes
+      docker-build-push.yml ← image build + OCIR push on merge to main
+```
+
+The deployment workflow references secrets (`OCIR_USERNAME`, `OCIR_AUTH_TOKEN`) and vars (`OCIR_REGISTRY`, `OCIR_NAMESPACE`) that won't exist until the operator configures the new project's repository settings. This is intentional — the workflow will fail with a clear "secret not found" error until the operator adds them. This is a better failure mode than having no pipeline at all.
+
+**`deploy.sh` removal:**
+
+Once the `docker-build-push.yml` pipeline is in the template, `deploy.sh` should be removed from the template entirely:
+- Everything it does is covered by the pipeline (build, tag, push, registry purge, rollout restart).
+- It requires local toolchain setup (docker buildx arm64, oci CLI, kubectl) that the pipeline handles in the GitHub Actions runner.
+- Keeping it alongside the pipeline creates two diverging code paths for the same operation.
+
+A note in `CLAUDE.md` and/or `docs/ai-workflow.md` should state: *"Deployment is handled by the `docker-build-push.yml` workflow on merge to `main`. Do not create or reference `deploy.sh` — this file is not part of the scaffold."*
+
+---
+
 ## Classification — Template vs Fork Changes
 
 All 14 gaps above fall into one of two categories:
@@ -527,6 +565,7 @@ All 14 gaps above fall into one of two categories:
 | Gap 16 — No Claude Code hooks | `web-template` `.claude/settings.json` + `CLAUDE.md` AI Guards section |
 | Gap 17 — `waiting-for-ai` vs `action-ready` not documented | `web-template` `docs/ai-workflow.md`; `CLAUDE.md` label reference |
 | Gap 18 (template part) — No screenshot gate for frontend PRs | `web-template` `[3]`/`[4]` issue ACs; `CLAUDE.md` screenshot rule |
+| Gap 19 — CI/CD pipelines not in template; `deploy.sh` redundant | `web-template` `.github/workflows/ci.yml` + `docker-build-push.yml`; remove `deploy.sh`; `CLAUDE.md` deployment note |
 
 ### Requires fork-level changes
 
@@ -562,3 +601,4 @@ Fork issues raised: [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/i
 | Gap 16 — No Claude Code hooks / AI guards | Medium (preventable quality issues) | Low | 🟠 Medium |
 | Gap 17 — `waiting-for-ai` vs `action-ready` not documented | Medium (wrong mode selected silently) | Low | 🟠 Medium |
 | Gap 18 — No screenshot gate for frontend PRs / no headless browser in bot | Medium (visual bugs merged undetected) | Low (template) / Medium (Dockerfile) | 🟠 Medium |
+| Gap 19 — CI/CD pipelines not in template; `deploy.sh` redundant | High (no automated test gate or deployment on day one) | Low | 🔴 High |

@@ -495,6 +495,49 @@ This gives the AI the ability to automatically capture and attach screenshots wh
 
 ---
 
+## Recommendation 20 — Include CI/CD Pipelines in Template by Default; Remove `deploy.sh`
+
+**From the discussion:** Testing and deployment pipelines had to be set up manually during the POC. Once the pipeline handles deployment, `deploy.sh` becomes redundant and should be removed.
+
+**Problem:** `web-template` ships with no `.github/workflows/` directory. Every new project starts with:
+- No automated test gate (PRs can merge untested)
+- No automated deployment (developer must run a local script)
+- `deploy.sh` as a fragile stopgap requiring local `docker buildx`, `oci` CLI, and `kubectl` setup
+
+**Proposed fix (Track A — template change):**
+
+Add to `web-template/.github/workflows/`:
+
+| File | Purpose |
+|---|---|
+| `ci.yml` | Run backend unit tests (xUnit), sidecar unit tests (pytest), and E2E tests on every PR and push |
+| `docker-build-push.yml` | Build Docker images for all services and push to OCIR on merge to `main` (GitVersion for semver tagging) |
+
+The deployment workflow requires secrets (`OCIR_USERNAME`, `OCIR_AUTH_TOKEN`) and vars (`OCIR_REGISTRY`, `OCIR_NAMESPACE`) that the operator adds to the new project's GitHub repository settings. Until these are configured the workflow fails visibly with a "secret not found" error — a better signal than having no pipeline at all.
+
+**`deploy.sh` removal:**
+
+Remove `deploy.sh` from the template. Everything it does is already covered by `docker-build-push.yml`:
+
+| `deploy.sh` step | Pipeline equivalent |
+|---|---|
+| `docker buildx build --platform linux/arm64 ... --push` | `docker/build-push-action@v5` in `docker-build-push.yml` |
+| OCI registry purge of old images | Can be added as a post-push step; not strictly necessary with semver tagging |
+| `kubectl rollout restart` | Covered by ArgoCD sync or a `kubectl` step in the same workflow |
+| Hardcoded `REGISTRY_NAMESPACE`, `COMPARTMENT_ID` | Replaced by repo vars/secrets — no project-specific hardcoding |
+
+**`CLAUDE.md` note to add:**
+```markdown
+## Deployment
+Deployment is automated via `.github/workflows/docker-build-push.yml` on merge to `main`.
+Do NOT create or use `deploy.sh` — this file is not part of the scaffold and will not be maintained.
+To deploy manually during development: push to `main` (or trigger the workflow manually via GitHub Actions).
+```
+
+**Why this matters beyond the POC:** Every future project bootstrapped from `web-template` gets CI from day one and a documented deployment path. The developer's only task is to add four repository secrets/vars — the pipelines handle everything else.
+
+---
+
 ## Implementation Classification — Template vs Fork
 
 All 15 recommendations fall into one of two tracks. This matters for sequencing: template changes can be applied immediately; fork changes require a code PR on `claude-code-telegram-k8s`.
@@ -521,6 +564,7 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 17 — Claude Code hooks / AI guards | `web-template` `.claude/settings.json` + `CLAUDE.md` AI Guards section |
 | 18 — Label mode documentation | `web-template` `docs/ai-workflow.md`; `CLAUDE.md` label quick reference |
 | 19 (template part) — Screenshot gate in frontend ACs | `web-template` `[3]`/`[4]` issue bodies; `CLAUDE.md` screenshot rule |
+| 20 — CI/CD pipelines in template; remove `deploy.sh` | `web-template` `.github/workflows/ci.yml` + `docker-build-push.yml`; remove `deploy.sh`; `CLAUDE.md` deployment note |
 
 ### Track B — Fork-level changes (require PR on `claude-code-telegram-k8s`)
 
@@ -554,6 +598,7 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 17 — Claude Code hooks / AI guards | Medium | Low | Template | 🟠 Next sprint |
 | 18 — `waiting-for-ai` vs `action-ready` documentation | Medium | Low | Template | 🟠 Next sprint |
 | 19 — Frontend screenshots + Playwright in bot | Medium | Low (template) / Medium (fork) | Template + Fork | 🟠 Next sprint |
+| 20 — CI/CD pipelines in template; remove deploy.sh | High | Low | Template | 🔴 Do first |
 | 3 — Phase Guard comments | Medium | Low | Template | 🟡 Nice to have |
 | 9 — Clarification protocol | Medium | Low | Template | 🟡 Nice to have |
 | 10 — Assume vs Ask mode | Low | Low | Template | 🟡 Nice to have |

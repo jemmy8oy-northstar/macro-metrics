@@ -539,13 +539,57 @@ This enables the bot to take automated screenshots of frontend changes before ra
 
 ---
 
+## Finding 18 — CI/CD Pipelines Absent from `web-template`; `deploy.sh` Is a Manual Workaround
+
+**Files:** `web-template/.github/workflows/` (missing), `web-template/deploy.sh` (present but redundant once pipeline is added)
+
+**Context from post-retro discussion (2026-06-10):** The developer noted that the testing and deployment pipelines had to be set up manually during the POC. The observation was that if they were part of the template they would exist by default, that the deployment pipeline can simply fail until the operator adds the required secrets/vars, and that once the pipeline is in place `deploy.sh` should be removed.
+
+**Current state (`macro-metrics` as reference implementation):**
+
+| Workflow | Status | What it does |
+|---|---|---|
+| `.github/workflows/ci.yml` | ✅ Exists (added manually mid-POC) | Backend xUnit tests, Python sidecar pytest, E2E via docker compose |
+| `.github/workflows/docker-build-push.yml` | ✅ Exists (added manually mid-POC) | Builds all three Docker images; pushes to OCIR with GitVersion semver tags |
+| `deploy.sh` | ✅ Exists (original manual workaround) | Local shell script: docker buildx build → push → OCI registry purge → kubectl rollout restart |
+
+**The gap:** Neither `ci.yml` nor `docker-build-push.yml` exist in `web-template`. Every project bootstrapped from the template starts with no automated test gate and no pipeline-based deployment.
+
+**Why `deploy.sh` should be removed once the pipeline is in the template:**
+
+1. **Functional duplication** — `docker-build-push.yml` builds, tags, and pushes all images; `deploy.sh` does the same thing via local `docker buildx` commands.
+2. **Toolchain requirement** — `deploy.sh` requires the developer's machine to have `docker buildx` configured for ARM64 cross-compilation, the OCI CLI authenticated, and `kubectl` pointing at the production cluster. The GitHub Actions workflow runs on a native ARM64 runner with no local toolchain dependency.
+3. **Hardcoded values** — `deploy.sh` contains project-specific constants (`REGISTRY_NAMESPACE`, `COMPARTMENT_ID`, `APP_NAME`, `KUBERNETES_NAMESPACE`) that need editing per project. The pipeline externalises these as repo vars/secrets.
+4. **No semver** — `deploy.sh` tags images with `git rev-parse --short HEAD` only. The pipeline uses GitVersion for proper semver tagging.
+
+**Proposed fix:**
+
+Add to `web-template/.github/workflows/`:
+- `ci.yml` — parameterised test runner for backend (xUnit), sidecar (pytest), and E2E (docker compose); runs on all PRs targeting `main`
+- `docker-build-push.yml` — image build + OCIR push on merge to `main`; fails gracefully until `OCIR_USERNAME`, `OCIR_AUTH_TOKEN`, `OCIR_REGISTRY`, `OCIR_NAMESPACE` are configured in repo settings
+
+Remove `deploy.sh` from `web-template`.
+
+Add to `CLAUDE.md`:
+```markdown
+## Deployment
+Deployment is automated via `.github/workflows/docker-build-push.yml` on merge to `main`.
+Do NOT create or reference `deploy.sh` — this file is not part of the scaffold.
+The deployment workflow requires four repository secrets/vars to be configured:
+- Secret: `OCIR_USERNAME`, `OCIR_AUTH_TOKEN`
+- Variable: `OCIR_REGISTRY`, `OCIR_NAMESPACE`
+Until these are set, the deployment workflow will fail — this is expected and the correct signal to the operator.
+```
+
+---
+
 ## Retro Follow-on Repo Map
 
 When applying the fixes from this retrospective, the following repositories need changes. This table is intended to guide the bot (or developer) running retro follow-on tasks so no repo is missed.
 
 | Repo | Track | What changes |
 |---|---|---|
-| `jemmy8oy/web-template` | A (template) | `CLAUDE.md` (all template instruction gaps), `docs/ai-workflow.md` (label quick ref, deployment + retro phases), `docs/specs/sdd-workflow.md` (phase 8+9), `scripts/init-issues.mjs` (assignee, testing ACs, screenshot ACs), `.github/workflows/require-dev-source.yml` (new), `.claude/settings.json` (new AI guard hooks) |
+| `jemmy8oy/web-template` | A (template) | `CLAUDE.md` (all template instruction gaps + deployment note), `docs/ai-workflow.md` (label quick ref, deployment + retro phases), `docs/specs/sdd-workflow.md` (phase 8+9), `scripts/init-issues.mjs` (assignee, testing ACs, screenshot ACs), `.github/workflows/require-dev-source.yml` (new — branch guard), `.github/workflows/ci.yml` (new — test gate), `.github/workflows/docker-build-push.yml` (new — OCIR deploy), `.claude/settings.json` (new — AI guard hooks); **remove** `deploy.sh` |
 | `jemmy8oy/claude-code-telegram-k8s` | B (fork infra) | `Dockerfile` (Playwright + headless browser), `values.yaml` (claudeMaxTurnsByLabel), plus any config consumed by issues [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) and [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) |
 | `jemmy8oy/claude-code-telegram` | B (fork source) | `src/events/handlers.py` — `_build_github_prompt()` to include comments and use latest unanswered; add `stop_reason` detection |
 | `jemmy8oy/macro-metrics` | Project-specific | No further changes post-merge of this PR; CLAUDE.md already reflects current project state |
@@ -580,3 +624,7 @@ When applying the fixes from this retrospective, the following repositories need
 | `scripts/init-issues.mjs` (`[3]`/`[4]` body) | Add screenshot AC | 🟠 High |
 | `CLAUDE.md` | Add Frontend PR Screenshots section | 🟠 High |
 | Fork: `claude-code-telegram-k8s` `Dockerfile` | Install Playwright + Chromium + system headless deps | 🟠 High |
+| `.github/workflows/ci.yml` | New file — test gate (backend xUnit, sidecar pytest, E2E) on all PRs | 🔴 Critical |
+| `.github/workflows/docker-build-push.yml` | New file — OCIR image push on merge to `main` (fails until secrets configured) | 🔴 Critical |
+| `deploy.sh` | **Remove** — superseded by `docker-build-push.yml` pipeline | 🔴 Critical |
+| `CLAUDE.md` | Add Deployment section directing to pipeline; note `deploy.sh` is not scaffolded | 🔴 Critical |
