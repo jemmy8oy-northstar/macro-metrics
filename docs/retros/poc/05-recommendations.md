@@ -538,6 +538,68 @@ To deploy manually during development: push to `main` (or trigger the workflow m
 
 ---
 
+## Recommendation 21 — Fix Helm Template Variable Substitution at Scaffold Time
+
+**From the discussion:** When `macro-metrics` was scaffolded from `web-template`, the Helm chart templates retained hardcoded names (`web-app-helm`, `balenthiran-helm`) from the template. These weren't caught until deployment was attempted, requiring 5+ iteration PRs to resolve over three days.
+
+**Three concrete fixes:**
+
+**1. Parameterise `helm/_helpers.tpl` — remove all hardcoded template names:**
+Replace `web-app-helm.fullname`, `balenthiran-helm.fullname`, and `balenthiranhelm.fullname` with a single helper that uses `{{ .Values.fullnameOverride | default .Release.Name }}`. The developer sets `fullnameOverride` once at scaffold time and all naming flows from it.
+
+**2. Ship `helm/values.yaml` with a ready-to-run ingress default:**
+```yaml
+# Set this to your app name at scaffold time (e.g. "macro-metrics")
+fullnameOverride: "your-app-name"
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: balenthiran.co.uk
+  tls:
+    - hosts:
+        - balenthiran.co.uk
+      secretName: balenthiran-tls    # shared wildcard cert — no per-project TLS setup
+
+apps:
+  - name: backend
+    ingress:
+      path: /your-app-name/api       # → balenthiran.co.uk/{app-name}/api
+  - name: frontend
+    ingress:
+      path: /your-app-name           # → balenthiran.co.uk/{app-name}
+```
+
+This establishes `balenthiran.co.uk/{app-name}/` as the standard URL convention and reuses the existing `balenthiran-tls` cert — no DNS or TLS setup needed per project.
+
+**3. Do NOT include app-specific secrets in the template:**
+The `FRED_API_KEY`, `ConnectionStrings__DefaultConnection`, and similar per-project secrets were added ad-hoc during the POC. The template should ship without any `secretKeyRef` env vars — the developer adds them per project. A commented scaffold instruction is enough:
+
+```yaml
+# App-specific secrets — uncomment and populate per project:
+# env:
+#   - name: MY_API_KEY
+#     valueFrom:
+#       secretKeyRef:
+#         name: {{ .Values.fullnameOverride }}-secrets
+#         key: MY_API_KEY
+```
+
+**CLAUDE.md scaffold instruction to add:**
+```markdown
+## Helm Scaffold Setup
+After creating a new project from this template:
+1. Set `helm/values.yaml` → `fullnameOverride` to your app name (lowercase, hyphens)
+2. Update `apps[*].ingress.path` to `/{app-name}` and `/{app-name}/api`
+3. The `balenthiran.co.uk` host and `balenthiran-tls` cert are shared — do not change them
+4. Add app-specific env vars / secrets as needed — no secrets are pre-scaffolded
+```
+
+**Why this matters:** Without this fix, every project scaffolded from the template will hit the same deployment debugging cycle. The fix is purely structural (template variables) — it adds zero complexity but saves hours of iteration.
+
+---
+
 ## Implementation Classification — Template vs Fork
 
 All 15 recommendations fall into one of two tracks. This matters for sequencing: template changes can be applied immediately; fork changes require a code PR on `claude-code-telegram-k8s`.
@@ -565,6 +627,7 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 18 — Label mode documentation | `web-template` `docs/ai-workflow.md`; `CLAUDE.md` label quick reference |
 | 19 (template part) — Screenshot gate in frontend ACs | `web-template` `[3]`/`[4]` issue bodies; `CLAUDE.md` screenshot rule |
 | 20 — CI/CD pipelines in template; remove `deploy.sh` | `web-template` `.github/workflows/ci.yml` + `docker-build-push.yml`; remove `deploy.sh`; `CLAUDE.md` deployment note |
+| 21 — Fix Helm variable substitution at scaffold time | `web-template` `helm/_helpers.tpl` (parameterise); `helm/values.yaml` (ingress defaults + `balenthiran-tls`); `CLAUDE.md` Helm scaffold section |
 
 ### Track B — Fork-level changes (require PR on `claude-code-telegram-k8s`)
 
@@ -599,6 +662,7 @@ All 15 recommendations fall into one of two tracks. This matters for sequencing:
 | 18 — `waiting-for-ai` vs `action-ready` documentation | Medium | Low | Template | 🟠 Next sprint |
 | 19 — Frontend screenshots + Playwright in bot | Medium | Low (template) / Medium (fork) | Template + Fork | 🟠 Next sprint |
 | 20 — CI/CD pipelines in template; remove deploy.sh | High | Low | Template | 🔴 Do first |
+| 21 — Fix Helm variable substitution at scaffold | High | Low | Template | 🔴 Do first |
 | 3 — Phase Guard comments | Medium | Low | Template | 🟡 Nice to have |
 | 9 — Clarification protocol | Medium | Low | Template | 🟡 Nice to have |
 | 10 — Assume vs Ask mode | Low | Low | Template | 🟡 Nice to have |

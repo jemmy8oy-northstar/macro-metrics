@@ -583,13 +583,105 @@ Until these are set, the deployment workflow will fail — this is expected and 
 
 ---
 
+## Finding 19 — Helm Template Names Not Replaced at Scaffold Time
+
+**Files affected:**
+- `web-template/helm/_helpers.tpl` — contains `web-app-helm.fullname` and `balenthiran-helm.fullname` definitions
+- `web-template/helm/templates/service.yaml` — referenced `balenthiranhelm.fullname` (typo; neither template name was updated)
+- `web-template/helm/values.yaml` — `fullnameOverride`, `registryPrefix`, and `ingress.path` values are template-specific, not project-generic
+
+**Context from post-retro discussion (2026-06-10):** The developer noted that some Helm variables didn't change from `web-app-helm` to `macro-metrics`, and that there may be a `balenthiran-helm` reference still present. A review of the deployment PRs (#83 through #102) and git log confirmed the issue.
+
+**Evidence from git history:**
+```
+2026-06-06  "fix: correct Helm config bugs ahead of deployment"
+            - Fix YFINANCE__SidecarBaseUrl: was 'macro-metrics-sidecar' but Helm generates
+              'macro-metrics-yfinance-sidecar' (fullnameOverride + app.name)
+            - Fix service.yaml: referenced 'balenthiranhelm.fullname' instead of
+              'web-app-helm.fullname' — would break helm template rendering entirely
+            - Fix registryPrefix to match actual OCIR repos
+
+2026-06-09  PRs #100, #101, #102 — further ingress path and routing corrections
+            (frontend base path `/macro-metrics` not wired in vite.config.ts + Program.cs)
+```
+
+**Total deployment iteration PRs:** #83, #86, #90, #100, #101, #102 — six PRs across three days to get deployment working from scratch.
+
+**Required changes to `web-template`:**
+
+**`helm/_helpers.tpl`:**
+```
+Current: {{- define "web-app-helm.fullname" -}}
+         {{- define "balenthiran-helm.fullname" -}}
+
+Required: {{- define "app.fullname" -}}
+          {{- .Values.fullnameOverride | default .Release.Name | trunc 63 | trimSuffix "-" }}
+          {{- end }}
+```
+Remove all `web-app-helm.*` and `balenthiran-helm.*` named helpers. Replace with a single `app.fullname` helper that uses `fullnameOverride` (set by the developer at scaffold time).
+
+**`helm/values.yaml`:**
+```yaml
+# Developer sets this at scaffold time — all naming flows from it
+fullnameOverride: "your-app-name"      # e.g. "macro-metrics"
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: balenthiran.co.uk
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  tls:
+    - hosts:
+        - balenthiran.co.uk
+      secretName: balenthiran-tls      # shared wildcard cert — no per-project TLS setup
+
+registryPrefix: "lhr.ocir.io/lr7uc6l49odc"   # shared OCIR namespace — constant
+
+apps:
+  - name: backend
+    ingress:
+      path: /your-app-name/api         # developer replaces 'your-app-name'
+      pathType: Prefix
+  - name: frontend
+    ingress:
+      path: /your-app-name             # developer replaces 'your-app-name'
+      pathType: Prefix
+```
+
+**Note on secrets:** App-specific secrets (`FRED_API_KEY`, `ConnectionStrings__DefaultConnection`) should NOT appear in the template `values.yaml`. Ship a commented placeholder only:
+```yaml
+# App-specific secrets — add per project:
+# env:
+#   - name: MY_API_KEY
+#     valueFrom:
+#       secretKeyRef:
+#         name: {{ .Values.fullnameOverride }}-secrets
+#         key: MY_API_KEY
+```
+
+**`CLAUDE.md` addition (new "Helm Scaffold Setup" section):**
+```markdown
+## Helm Scaffold Setup
+
+After creating a new project from this template, update `helm/values.yaml`:
+1. Set `fullnameOverride` to your app name (lowercase, hyphens — e.g. `my-app`)
+2. Set `apps[*].ingress.path` to `/{app-name}` (frontend) and `/{app-name}/api` (backend)
+3. The `balenthiran.co.uk` host, `balenthiran-tls` cert, and `registryPrefix` are shared — do not change them
+4. Add app-specific env vars / secrets as needed — none are pre-scaffolded
+5. Do NOT add `deploy.sh` — deployment is via `docker-build-push.yml` pipeline (see Deployment section)
+```
+
+---
+
 ## Retro Follow-on Repo Map
 
 When applying the fixes from this retrospective, the following repositories need changes. This table is intended to guide the bot (or developer) running retro follow-on tasks so no repo is missed.
 
 | Repo | Track | What changes |
 |---|---|---|
-| `jemmy8oy/web-template` | A (template) | `CLAUDE.md` (all template instruction gaps + deployment note), `docs/ai-workflow.md` (label quick ref, deployment + retro phases), `docs/specs/sdd-workflow.md` (phase 8+9), `scripts/init-issues.mjs` (assignee, testing ACs, screenshot ACs), `.github/workflows/require-dev-source.yml` (new — branch guard), `.github/workflows/ci.yml` (new — test gate), `.github/workflows/docker-build-push.yml` (new — OCIR deploy), `.claude/settings.json` (new — AI guard hooks); **remove** `deploy.sh` |
+| `jemmy8oy/web-template` | A (template) | `CLAUDE.md` (all template instruction gaps + deployment note + Helm scaffold section), `docs/ai-workflow.md` (label quick ref, deployment + retro phases), `docs/specs/sdd-workflow.md` (phase 8+9), `scripts/init-issues.mjs` (assignee, testing ACs, screenshot ACs), `.github/workflows/require-dev-source.yml` (new — branch guard), `.github/workflows/ci.yml` (new — test gate), `.github/workflows/docker-build-push.yml` (new — OCIR deploy), `.claude/settings.json` (new — AI guard hooks), `helm/_helpers.tpl` (parameterise — remove `web-app-helm`/`balenthiran-helm`), `helm/values.yaml` (ingress defaults: `balenthiran.co.uk/{app-name}/`, `balenthiran-tls`); **remove** `deploy.sh` |
 | `jemmy8oy/claude-code-telegram-k8s` | B (fork infra) | `Dockerfile` (Playwright + headless browser), `values.yaml` (claudeMaxTurnsByLabel), plus any config consumed by issues [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) and [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) |
 | `jemmy8oy/claude-code-telegram` | B (fork source) | `src/events/handlers.py` — `_build_github_prompt()` to include comments and use latest unanswered; add `stop_reason` detection |
 | `jemmy8oy/macro-metrics` | Project-specific | No further changes post-merge of this PR; CLAUDE.md already reflects current project state |
@@ -628,3 +720,6 @@ When applying the fixes from this retrospective, the following repositories need
 | `.github/workflows/docker-build-push.yml` | New file — OCIR image push on merge to `main` (fails until secrets configured) | 🔴 Critical |
 | `deploy.sh` | **Remove** — superseded by `docker-build-push.yml` pipeline | 🔴 Critical |
 | `CLAUDE.md` | Add Deployment section directing to pipeline; note `deploy.sh` is not scaffolded | 🔴 Critical |
+| `helm/_helpers.tpl` | Parameterise — replace `web-app-helm.fullname` + `balenthiran-helm.fullname` with `app.fullname` using `fullnameOverride` | 🔴 Critical |
+| `helm/values.yaml` | Ship with `balenthiran.co.uk/{app-name}/` ingress defaults + `balenthiran-tls` cert; remove hardcoded template names; no app-specific secrets | 🔴 Critical |
+| `CLAUDE.md` | Add "Helm Scaffold Setup" section with the three post-scaffold steps | 🔴 Critical |

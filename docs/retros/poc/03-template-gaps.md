@@ -540,6 +540,86 @@ A note in `CLAUDE.md` and/or `docs/ai-workflow.md` should state: *"Deployment is
 
 ---
 
+## Gap 20 — Helm Template Names Not Updated at Scaffold Time
+
+**Severity:** 🔴 High
+
+**Where it hurt:** Deployment — PRs #83, #86, #90, #100, #101, #102. Six separate PRs were required across three days (2026-06-06 to 2026-06-09) to get the Helm deployment working. The root cause was that the `web-template` Helm chart contained hardcoded template-level names (`web-app-helm`, `balenthiran-helm`) that were not replaced when the project was scaffolded via `dotnet new web-template`.
+
+**Root cause:** The Helm `_helpers.tpl` defined helper macros such as `web-app-helm.fullname` and `balenthiran-helm.fullname`. The `service.yaml` template referenced `balenthiranhelm.fullname` (a typo variant). At scaffold time, only the C# project names (`SolutionName → MacroMetrics`) were substituted — the Helm template references were not. The fix was discovered only once deployment was attempted and the AI corrected them via a manual debug commit ("fix: correct Helm config bugs ahead of deployment", 2026-06-06).
+
+**Additional scaffolding gaps found:**
+- `registryPrefix` defaulted to `lhr.ocir.io/balenthiran` rather than the project-specific namespace
+- `fullnameOverride` was initially set to `web-app-helm` rather than the project name
+- No standard ingress path convention was documented — the pattern `balenthiran.co.uk/{app-name}/` emerged through iteration
+- App-specific secrets (`FRED_API_KEY`, `ConnectionStrings__DefaultConnection`) were added ad-hoc rather than being scaffolded out with clear "replace me" markers
+
+**Evidence from POC git history:**
+```
+2026-06-06  "fix: correct Helm config bugs ahead of deployment"
+            - web-app-helm.fullname → correct helper (service.yaml)
+            - balenthiranhelm.fullname reference removed (typo in _helpers.tpl)
+            - registryPrefix corrected to actual OCIR namespace
+2026-06-09  PRs #100, #101, #102 — further ingress path / routing corrections
+```
+
+**Proposed fix:**
+
+1. **In `helm/_helpers.tpl`** — replace all `web-app-helm` and `balenthiran-helm` references with `{{ .Values.fullnameOverride | default .Release.Name }}`. The `fullnameOverride` is the single scaffold-time variable the developer sets.
+
+2. **In `helm/values.yaml`** — ship with a documented default ingress configuration:
+   ```yaml
+   # Set this to your app name at scaffold time (e.g. "macro-metrics")
+   fullnameOverride: "your-app-name"
+
+   ingress:
+     enabled: true
+     className: nginx
+     hosts:
+       - host: balenthiran.co.uk
+     annotations:
+       cert-manager.io/cluster-issuer: "letsencrypt-prod"
+     tls:
+       - hosts:
+           - balenthiran.co.uk
+         secretName: balenthiran-tls   # Reuse the shared wildcard cert
+
+   apps:
+     - name: backend
+       ingress:
+         path: /your-app-name/api      # Replace with fullnameOverride + /api
+         pathType: Prefix
+     - name: frontend
+       ingress:
+         path: /your-app-name          # Replace with fullnameOverride
+         pathType: Prefix
+   ```
+
+   This establishes `balenthiran.co.uk/{app-name}/` as the standard URL pattern and reuses the existing `balenthiran-tls` cert — no per-project TLS setup required.
+
+3. **App-specific secrets:** Do NOT include project-specific secret references (e.g. `FRED_API_KEY`, database connection strings) in the template `values.yaml`. Add a commented placeholder:
+   ```yaml
+   # App-specific secrets — add per project as needed:
+   # env:
+   #   - name: MY_SECRET
+   #     valueFrom:
+   #       secretKeyRef:
+   #         name: <app-name>-secrets
+   #         key: MY_SECRET_KEY
+   ```
+
+4. **Scaffold-time instruction in `CLAUDE.md`:**
+   ```markdown
+   ## Helm Scaffold Setup
+   After scaffolding, update `helm/values.yaml`:
+   1. Set `fullnameOverride` to your app name (lowercase, hyphenated)
+   2. Update `ingress.apps[*].path` to match: `/{app-name}` and `/{app-name}/api`
+   3. The `balenthiran-tls` cert and `balenthiran.co.uk` host are shared — do not change them
+   4. Add app-specific secrets/env vars as needed — no secrets are pre-scaffolded
+   ```
+
+---
+
 ## Classification — Template vs Fork Changes
 
 All 14 gaps above fall into one of two categories:
@@ -566,6 +646,7 @@ All 14 gaps above fall into one of two categories:
 | Gap 17 — `waiting-for-ai` vs `action-ready` not documented | `web-template` `docs/ai-workflow.md`; `CLAUDE.md` label reference |
 | Gap 18 (template part) — No screenshot gate for frontend PRs | `web-template` `[3]`/`[4]` issue ACs; `CLAUDE.md` screenshot rule |
 | Gap 19 — CI/CD pipelines not in template; `deploy.sh` redundant | `web-template` `.github/workflows/ci.yml` + `docker-build-push.yml`; remove `deploy.sh`; `CLAUDE.md` deployment note |
+| Gap 20 — Helm names not updated at scaffold time | `web-template` `helm/_helpers.tpl` (remove hardcoded names); `helm/values.yaml` (parameterised ingress defaults with `balenthiran.co.uk/{app-name}/` + `balenthiran-tls`); `CLAUDE.md` Helm scaffold section |
 
 ### Requires fork-level changes
 
@@ -602,3 +683,4 @@ Fork issues raised: [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/i
 | Gap 17 — `waiting-for-ai` vs `action-ready` not documented | Medium (wrong mode selected silently) | Low | 🟠 Medium |
 | Gap 18 — No screenshot gate for frontend PRs / no headless browser in bot | Medium (visual bugs merged undetected) | Low (template) / Medium (Dockerfile) | 🟠 Medium |
 | Gap 19 — CI/CD pipelines not in template; `deploy.sh` redundant | High (no automated test gate or deployment on day one) | Low | 🔴 High |
+| Gap 20 — Helm template names not updated at scaffold time | High (5+ deployment iteration PRs) | Low | 🔴 High |
