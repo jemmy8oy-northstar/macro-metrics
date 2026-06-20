@@ -1,7 +1,6 @@
 # Controls deployment names: "{fullnameOverride}-frontend" and "{fullnameOverride}-backend"
 # e.g. fullnameOverride: "balenthiran-apeify" -> balenthiran-apeify-frontend, balenthiran-apeify-backend
 fullnameOverride: "macro-metrics"
-
 ingress:
   enabled: true
   className: nginx
@@ -13,9 +12,7 @@ ingress:
     - hosts:
         - balenthiran.co.uk
       secretName: balenthiran-tls
-
 registryPrefix: "lhr.ocir.io/lr7uc6l49odc"
-
 # Image pull secret for the private OCIR registry.
 # Create the secret before deploying:
 #   kubectl create secret docker-registry ocir-secret \
@@ -24,12 +21,11 @@ registryPrefix: "lhr.ocir.io/lr7uc6l49odc"
 #     --docker-password=<auth-token>
 imagePullSecrets:
   - name: ocir-secret
-
 apps:
   - name: backend
     image:
       repository: lhr.ocir.io/lr7uc6l49odc/macro-metrics-backend
-      tag: latest
+      tag: 0.1.24
       pullPolicy: Always
     containerPort: 8080
     replicas: 1
@@ -41,7 +37,7 @@ apps:
       pathType: Prefix
     env:
       - name: YFINANCE__SidecarBaseUrl
-        value: "http://macro-metrics-yfinance-sidecar:8000"   # ClusterIP service for the sidecar
+        value: "http://macro-metrics-yfinance-sidecar:8000" # ClusterIP service for the sidecar
       - name: FRED__ApiKey
         valueFrom:
           secretKeyRef:
@@ -51,11 +47,10 @@ apps:
     nodeSelector: {}
     tolerations: []
     affinity: {}
-
   - name: frontend
     image:
       repository: lhr.ocir.io/lr7uc6l49odc/macro-metrics-frontend
-      tag: latest
+      tag: 0.1.24
       pullPolicy: Always
     containerPort: 80
     replicas: 1
@@ -69,11 +64,10 @@ apps:
     nodeSelector: {}
     tolerations: []
     affinity: {}
-
   - name: yfinance-sidecar
     image:
       repository: lhr.ocir.io/lr7uc6l49odc/macro-metrics-sidecar
-      tag: latest
+      tag: 0.1.24
       pullPolicy: Always
     containerPort: 8000
     replicas: 1
