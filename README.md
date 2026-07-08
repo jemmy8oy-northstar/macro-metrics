@@ -192,6 +192,32 @@ kubectl create secret generic your-app-secrets \
 
 > **Important**: The secret name (`your-app-secrets`) must match `secretKeyRef.name` in `helm/values.yaml`.
 
+#### This deployment (macro-metrics)
+
+The sections above are the generic web-template steps. For the live `macro-metrics`
+deployment specifically, the backend needs a [FRED](https://fred.stlouisfed.org/docs/api/api_key.html)
+API key. It is provisioned as a single manually-created secret:
+
+```bash
+kubectl create secret generic macro-metrics-secrets \
+  --from-literal=FRED_API_KEY="<your-fred-api-key>" \
+  -n balenthiran
+```
+
+- **Secret name** `macro-metrics-secrets`, **key** `FRED_API_KEY`, **namespace** `balenthiran`
+  — these must match `secretKeyRef` and `targetNamespace` (secret name/key are wired in
+  `helm/values.yaml`; the namespace is set by ArgoCD in `oke-fleet/config/macro-metrics.json`).
+- The key flows `FRED_API_KEY` (secret) → `FRED__ApiKey` (pod env, injected via `secretKeyRef`
+  in `helm/templates/deployment.yaml`) → `Fred:ApiKey` (read at startup by
+  `FredFetcherService` / validated in `ServiceRegistration`). It is **never** baked into the
+  image — the Dockerfile and `docker-build-push.yml` never touch it.
+
+> **This secret is created manually, by design.** The cluster control plane is not exposed
+> to any automation (no CI/GitOps write access to it), so the secret is applied out-of-band
+> with `kubectl` and lives only in-cluster. ArgoCD deploys the app from this repo's Helm chart
+> but does not manage this secret. If you ever migrate to reproducible-from-git secrets
+> (Sealed Secrets / External Secrets), update this section.
+
 ### 4. Update Configuration
 
 Update these two files before deploying:
