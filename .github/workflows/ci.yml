@@ -1,14 +1,15 @@
 name: CI
 
+# Every pull request, into any branch — so a feature -> dev merge is gated by
+# the same suite as a dev -> main promotion. The previous trigger was PRs into
+# main only, which meant the most thorough suite in the org never once ran on
+# the branch all the work actually lands on.
+#
+# Job ids double as the required status-check contexts named in the branch
+# ruleset — rename one and that required check hangs forever.
 on:
-  push:
-    branches:
-      - main
-      - 'feat/**'
-      - 'fix/**'
   pull_request:
-    branches:
-      - main
+    branches: ["**"]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,8 +17,7 @@ concurrency:
 
 jobs:
   # ── .NET backend unit & integration tests ─────────────────────────────────
-  backend-tests:
-    name: Backend Tests (.NET)
+  backend:
     runs-on: ubuntu-latest
 
     steps:
@@ -53,8 +53,7 @@ jobs:
           path: test-results/*.trx
 
   # ── Python yfinance sidecar unit & integration tests ──────────────────────
-  sidecar-tests:
-    name: Sidecar Tests (Python)
+  sidecar:
     runs-on: ubuntu-latest
 
     steps:
@@ -81,12 +80,8 @@ jobs:
         run: pytest tests/test_integration.py -v --tb=short
 
   # ── End-to-end: backend + sidecar wired together via Docker Compose ────────
-  e2e-tests:
-    name: E2E Tests (backend ↔ sidecar)
+  e2e:
     runs-on: ubuntu-latest
-    # Only run E2E on PRs targeting main and on direct pushes to main to keep
-    # feature-branch CI fast.  Remove this condition to run on every push.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout
