@@ -1,4 +1,4 @@
-import { useCompare } from "../context/CompareContext";
+import { useCompare } from "../context/compare-context";
 import { useGetRatioQuery } from "../api/metricsApi";
 import { MetricPicker } from "./MetricPicker";
 import { RatioChart } from "./RatioChart";
