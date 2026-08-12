@@ -1,5 +1,5 @@
 import * as Select from "@radix-ui/react-select";
-import { useCompare } from "../context/CompareContext";
+import { useCompare } from "../context/compare-context";
 import { METRICS } from "../data/metrics";
 import "./MetricPicker.css";
 

@@ -1,14 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-
-type CompareState = {
-  numerator: string | null;
-  denominator: string | null;
-  setCompare: (numerator: string, denominator: string) => void;
-  setNumerator: (v: string | null) => void;
-  setDenominator: (v: string | null) => void;
-};
-
-const CompareContext = createContext<CompareState | null>(null);
+import { useState, type ReactNode } from "react";
+import { CompareContext } from "./compare-context";
 
 export function CompareProvider({ children }: { children: ReactNode }) {
   const [numerator, setNumerator] = useState<string | null>(null);
@@ -24,10 +15,4 @@ export function CompareProvider({ children }: { children: ReactNode }) {
       {children}
     </CompareContext.Provider>
   );
-}
-
-export function useCompare() {
-  const ctx = useContext(CompareContext);
-  if (!ctx) throw new Error("useCompare must be used inside CompareProvider");
-  return ctx;
 }

@@ -1,6 +1,6 @@
 import { useGetRatioQuery } from "../api/metricsApi";
 import { RatioChart } from "./RatioChart";
-import { useCompare } from "../context/CompareContext";
+import { useCompare } from "../context/compare-context";
 import type { Preset } from "../data/presets";
 import "./PresetCard.css";
 
