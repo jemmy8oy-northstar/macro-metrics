@@ -1,0 +1,668 @@
+# Recommendations — Future SDD Process
+
+**Purpose:** Concrete, actionable recommendations to improve the SDD process for the next project, based on MacroMetrics POC learnings.
+
+---
+
+## Core Philosophy Validation
+
+The SDD process' core principles held up well:
+
+> *"Iterate in chat first — decisions made in chat are cheap; decisions made in code are expensive."*
+
+This was validated: the most expensive rework (CAPE bug, branch drift, ONS stub) all happened because something was **not** iterated in chat/spec first. The prescription is correct; execution gaps were in the template, not the philosophy.
+
+---
+
+## Recommendation 1 — Smarter [1c] Questionnaire
+
+The `[1c]` spec questionnaire is the most important document in the SDD process. It sets the foundation for every subsequent phase. The current questionnaire is good but under-specifies several areas that caused repeated friction.
+
+**Proposed additions:**
+
+```markdown
+## Extended Spec Questionnaire
+
+### Foundation (existing)
+- What problem does this product solve, and for whom?
+- What does a successful MVP look like?
+- What is explicitly out of scope for the MVP?
+
+### Database
+- [ ] This project requires a persistent database (PostgreSQL + EF Core)
+- If yes: any schema hints or domain model notes?
+- If no: confirm the backend will be stateless for MVP.
+
+### External Data Sources (new — critical)
+For each external data source:
+- API name and base URL
+- Specific series IDs / endpoint paths needed
+- API key required? How should it be stored?
+- Data cadence (daily/monthly/quarterly)?
+- Earliest data available?
+- Have you verified the series ID exists and is accessible?
+
+### Branch & Deployment (new)
+- Target deployment environment (Kubernetes / Fly.io / Vercel / other)?
+- Container registry in use?
+- Should all feature PRs target `dev` with `dev → main` for deployment?
+
+### AI Behaviour Preferences (new)
+- Should the AI ask clarifying questions before implementing, or make assumptions and document them in the PR?
+- Preferred assumption surfacing: (a) block and ask, (b) implement with assumptions listed in PR, (c) mix
+```
+
+---
+
+## Recommendation 2 — "Assumptions & Decisions" PR Section (High Value)
+
+The single highest-leverage improvement is adding a structured **Assumptions & Decisions** section to every AI-raised PR. This addresses:
+- Silent assumptions (CAPE on FRED, branch targeting, CSS approach)
+- The developer's ability to review and override without reading every line of code
+
+**Proposed PR template addition:**
+```markdown
+## Assumptions & Decisions
+
+> Any assumption made during implementation that was not explicitly specified in the issue.
+
+| # | Assumption | Rationale | If incorrect... |
+|---|---|---|---|
+| 1 | [e.g. FRED hosts CAPE data] | [e.g. FRED API is already integrated] | [e.g. a new fetcher service is needed] |
+| 2 | | | |
+
+> If you disagree with any assumption above, comment and re-apply `action-ready`. The AI will revise.
+```
+
+This is a lightweight, high-value addition. The developer can scan the table in 30 seconds and catch problems before they land in production.
+
+---
+
+## Recommendation 3 — "Phase Guard" at the Top of Every AI Comment
+
+When the AI is triggered on an issue, it should check whether the current phase matches the issue's phase number and flag any mismatch. This replaces the verbose multi-paragraph dependency checks with a concise status block.
+
+**Proposed format:**
+```
+## 🔍 Phase Check
+
+| Check | Status |
+|---|---|
+| Phase 5 dependencies ([4] issues) | ⏳ #32, #34 still open |
+| Database decision from [1c] | ✅ "No DB for MVP" — will skip EF Core items |
+| Data sources validated | ⚠️ CAPE source unverified — will flag in spec |
+
+> Proceeding once #32 and #34 close. Will post one update when they do.
+```
+
+This is concise, scannable, and communicates the same information as the current verbose comments — but in 10 lines instead of 50.
+
+---
+
+## Recommendation 4 — Separate [3a] into [3a-tech] and [3a-stories]
+
+The `[3a]` issue was the most friction-heavy orchestrator issue in the POC. It combined five distinct concerns (library choices, API skeleton, fake data strategy, TDD approach, BDD stories) into one PR, which led to 4+ review rounds.
+
+**Proposed split:**
+
+| Issue | Action |
+|---|---|
+| `[3a]` Frontend tech decisions | AI raises `docs/tech-decisions-frontend.md` covering library choices, API skeleton contracts, fake data strategy, and TDD approach. Human review gate. |
+| `[3b]` Frontend BDD user stories | Triggered once [3a] is merged. AI raises `docs/user-stories-frontend.md` with BDD stories derived from the signed-off designs and agreed tech stack. |
+| `[3c]` Create frontend issues + backend skeleton | Triggered once [3b] is merged. AI creates `[4]` frontend issues AND raises the Faker backend skeleton PR. |
+
+This reduces any single PR's scope to one clear deliverable and makes the review gate more targeted.
+
+---
+
+## Recommendation 5 — Data Source Validation in [5a]
+
+Add an explicit data source validation step to the `[5a]` backend design spec acceptance criteria:
+
+```markdown
+## Data Source Validation (required)
+
+For each external data source listed in [1c]:
+- [ ] Confirm the API endpoint / series ID is live and accessible
+- [ ] Document the exact URL pattern used
+- [ ] Note rate limits and API key requirements
+- [ ] Record the earliest available date for each series
+- [ ] Flag any sources that could not be validated with a ⚠️ and why
+```
+
+This would have caught the CAPE/FRED mismatch during Phase 5, before a single line of fetcher code was written.
+
+---
+
+## Recommendation 6 — Branch Discipline Enforcement (Structural)
+
+The `main`/`dev` drift (issue #80) was the most impactful process failure. It required a dedicated drift-resolution PR and created confusion about which branch was current.
+
+**Structural fix (not just guidance):**
+
+Add `.github/workflows/require-dev-source.yml`:
+```yaml
+name: Enforce dev-first workflow
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  check-source-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Branch source check
+        run: |
+          if [[ "${{ github.head_ref }}" != "dev" && "${{ github.head_ref }}" != hotfix/* ]]; then
+            echo "::error::PRs to main must come from dev or hotfix/*. Raise your PR against dev first."
+            exit 1
+          fi
+```
+
+Add this workflow to the web-template repository so every new project inherits it automatically.
+
+---
+
+## Recommendation 7 — Deployment Phase (Phase 8)
+
+Add a formal **Phase 8 — Deployment** to `docs/ai-workflow.md`:
+
+```markdown
+### Phase 8 — Deployment
+
+Triggered once all [6] issues are closed (or explicitly signed off).
+
+| Issue | Action |
+|---|---|
+| [8a] | AI sets up CI/CD pipeline: GitHub Actions → container registry → K8s/hosting |
+| [8b] | Developer configures registry secrets and K8s credentials |
+| [8c] | AI raises Helm/deployment config PR targeting `dev` |
+| [8d] | Developer merges `dev → main` to trigger production deployment |
+
+**Checklist for AI when raising the deployment PR:**
+- [ ] Dockerfile builds cleanly
+- [ ] nginx.conf (or equivalent) includes all required routes
+- [ ] All environment variables documented in `docs/deployment.md`
+- [ ] Health check endpoint configured (`/api/status` or equivalent)
+- [ ] All secrets referenced by name (never hardcoded)
+```
+
+---
+
+## Recommendation 8 — Retro Phase (Phase 9 / Always Last)
+
+Add a mandatory **retro phase** to every project:
+
+```markdown
+### Phase 9 — Retrospective
+
+| Issue | Action |
+|---|---|
+| [9a] | AI generates retrospective in `docs/retros/<project-name>/` covering: process analysis, issue quality, template gaps, technical decisions, and recommendations |
+| [9b] | Developer reviews and merges the retro PR |
+| [9c] | AI opens PRs on `web-template` to apply gap fixes identified in the retro |
+```
+
+The retro should be generated **before** the MVP is considered done. Having it as the last formal step ensures learnings are captured while context is fresh.
+
+---
+
+## Recommendation 9 — Streamlined AI Clarification Flow
+
+The current flow when the AI has questions is ad-hoc. A structured clarification protocol would reduce friction:
+
+**Proposed protocol:**
+1. If the AI can make a sensible assumption → implement with the assumption documented in the PR's "Assumptions & Decisions" table. The developer can override in review.
+2. If the AI cannot make a sensible assumption (e.g. "which of three equally valid options?") → post a single comment with the question and a recommended default. Remove `action-ready`. Add `waiting-for-human`.
+3. If a decision was already made in a previous comment → implement without re-asking. Read all issue comments before posting a new question.
+
+**Anti-patterns to eliminate:**
+- Asking the same question multiple times (EF Core issue)
+- Re-listing full dependency analysis when only the open-item count has changed
+- Blocking on trivial decisions that could reasonably be assumed and noted
+
+---
+
+## Recommendation 10 — "AI Assumptions" Mode vs "AI Asks" Mode
+
+A configurable behaviour preference (captured in `[1c]`) would let the developer choose how they want the AI to handle ambiguity:
+
+| Mode | AI behaviour |
+|---|---|
+| **Assume & Document** | AI makes sensible assumptions, implements, lists all assumptions in the PR. Developer reviews and overrides. Fastest flow. |
+| **Ask First** | AI posts all clarifying questions before starting. Developer answers. Slower but developer retains more control. |
+| **Mixed** | AI asks for major architectural decisions; assumes for minor/stylistic choices. |
+
+The MacroMetrics POC showed that "Assume & Document" would have been more efficient — the developer was responsive and happy to guide via PR review rather than pre-implementation Q&A.
+
+---
+
+## Recommendation 11 — Always Assign the Repository Owner
+
+**The gap:** ~60–70% of Phase 6 issues and PRs were created without assigning the developer. GitHub notifications are assignee-driven — no assignee means the developer may silently miss activity.
+
+**Evidence:** Issues #44–#56, #58, #59, #73 (and the PRs that closed them) were all created without an assignee. The developer confirmed this directly: *"the bot does not consistently assign me when it creates an issue or PR, this is essential to ensure that I get notifications."*
+
+**Fix (one line):**
+Add to `CLAUDE.md` (and the web-template):
+```
+## Notification Rule (mandatory)
+Always assign the repository owner to every issue and PR:
+  gh issue create ... --assignee $(gh repo view --json owner --jq .owner.login)
+  gh pr create   ... --assignee $(gh repo view --json owner --jq .owner.login)
+```
+
+Add this to every issue factory's `gh issue create` loop — especially `[3b]` (creates frontend issues) and `[5c]` (creates 19 backend issues).
+
+**Secondary fix — PR template:**
+Add a `--assignee` line to the `gh pr create` template in `CLAUDE.md` so it's always included by default.
+
+---
+
+## Recommendation 12 — Reduce action-ready Relabelling Friction
+
+**The gap:** The developer had to manually re-apply `action-ready` after every AI pass — including partial passes and timeouts. For issues like #8 `[5a]` (3 passes) and #57 (timeout → second run), this was repeated friction.
+
+The developer raised this directly: *"I often have to keep relabelling issues with ai ready."*
+
+**Fix — self-relabelling on partial completion:**
+When the AI does not fully complete a task (no PR raised, or work was explicitly noted as partial), re-apply the `action-ready` label before exiting:
+```bash
+# Partial/timeout — re-label so the next trigger fires automatically
+gh issue edit $ISSUE_NUMBER --add-label "action-ready"
+gh issue comment $ISSUE_NUMBER --body "⚡ Pass N complete (partial). Re-labelled for next pass. Remaining: [X]"
+```
+
+**Fix — label lifecycle clarity:**
+Introduce a two-label pattern:
+| Label | Meaning |
+|---|---|
+| `action-ready` | Human has approved — trigger the AI |
+| `action-in-progress` | AI is currently working |
+
+The AI sets `action-in-progress` when it starts, and either:
+- Closes the issue/labels `action-complete` on success
+- Re-labels `action-ready` on partial completion
+
+This lets the developer see at a glance which issues need a re-trigger vs which are awaiting review.
+
+**Fix — iteration limit per issue type:**
+Set `max_turns` hints in issue templates to guide the operator:
+- Orchestrator issues `[1c]`, `[3a]`, `[5a]`: ~80 turns (complex, multi-pass)
+- Implementation issues `[4]`, `[6]`: ~40 turns (one-pass expected)
+
+---
+
+## Recommendation 13 — Structured Pass Summaries for Multi-Pass Issues
+
+**The gap:** The AI has no persistent memory between triggers. On each new pass it re-reads the same files, re-checks the same dependencies, and sometimes re-asks the same questions. This wastes tokens and contributes to the EF Core re-questioning pattern.
+
+**Fix — structured pass summary comments:**
+At the end of every AI run (partial or complete), leave a structured summary comment:
+```markdown
+## AI Pass 2 Summary — 2026-06-07
+
+**Status:** Partial — PR not yet raised. Timed out at Cache-Control implementation.
+
+**Completed this pass:**
+- Read project spec, backend design, and Phase 6 user stories ✅
+- Set up `CacheControlEndpointFilter` in `MacroMetrics.WebApi` ✅
+- Unit tests written ✅
+
+**Not completed:**
+- Integration test wiring for the filter
+- PR not raised
+
+**Files to skip re-reading next pass:**
+- `docs/specs/project-vision.md` (no DB, stateless proxy)
+- `docs/backend-design.md` (service architecture finalised)
+
+**Next trigger:** Re-apply `action-ready`. Implementation is ~70% complete.
+```
+
+This dramatically reduces the startup overhead of pass N+1 — the AI reads the summary comment instead of re-crawling the whole spec tree.
+
+---
+
+## Recommendation 14 — Multi-pass Context: Read All Comments Before Responding
+
+**From the discussion:** The bot was triggered on issue #88 twice. On the second trigger it re-started its full analysis from scratch and re-asked questions the developer had already answered. The root cause is that the bot receives the issue body as its prompt, not the conversation so far.
+
+**Two-layer fix:**
+
+**Layer 1 — CLAUDE.md instruction (implement now):**
+```markdown
+## Multi-pass Issue Behaviour
+
+Before posting any comment on an issue, read ALL existing comments in full.
+- If you have already asked clarifying questions and the owner has answered them: proceed with the implementation. Do not re-ask.
+- If you have already proposed a plan or analysis: do not repeat it — continue from where you left off.
+- If a previous pass left a structured summary comment: read that summary first and skip re-reading files already listed there.
+```
+
+This won't achieve a perfect fix (the agent still re-reads files), but it eliminates the "re-ask answered questions" failure mode and is a zero-effort change.
+
+**Layer 2 — Fork change (tracked in [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33)):**
+The webhook handler should find the latest unanswered human comment and use it as the task prompt rather than always using the issue body. This is the complete fix.
+
+---
+
+## Recommendation 15 — Make max_turns Failures Visible
+
+**From the discussion:** When the AI hits its iteration limit, there is currently no signal to the developer other than silence. The developer must infer something went wrong from the absence of a completion message.
+
+**Two-layer fix:**
+
+**Layer 1 — Raise the default limit (fork config change, low risk):**
+Raise the default `claudeMaxTurns` from the current ~20–50 to **100**. Orchestrator issues (`[1c]`, `[3a]`, `[5a]`) and complex implementation issues regularly need more turns than the current default allows.
+
+**Layer 2 — Post a ⚠️ comment when the limit is hit (tracked in [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34)):**
+The fork should detect `stop_reason == "max_turns"` and:
+1. Post a GitHub comment: *"⚠️ Claude reached its iteration limit on this pass. Re-apply `waiting-for-ai` to continue."*
+2. Send a distinct Telegram notification (not a normal completion message)
+3. Do **not** remove the `waiting-for-ai` label — the developer should be prompted to re-trigger, not left wondering why the label is gone
+
+This turns a silent failure into a clear, actionable signal.
+
+---
+
+## Recommendation 16 — Surface Testing Standards in Issue ACs
+
+**From the discussion:** The web template doesn't prominently mandate testing in its issue templates. The `testing-strategy.md` exists but is not referenced from issue acceptance criteria — testing happens only if the AI decides to apply the strategy.
+
+**Fix:** Add explicit testing ACs to every `[3]` and `[5]` issue body in the template. This moves testing from "a document the AI should remember to read" to "a checklist item on every issue that must be ticked before the PR is raised."
+
+```markdown
+## Testing (mandatory — see `docs/specs/testing-strategy.md`)
+- [ ] [Frontend] `npm test` passes — at least one Vitest test per component
+- [ ] [Backend] `dotnet test` passes — unit tests written TDD, integration scenario defined
+```
+
+**Also add to `CLAUDE.md`:**
+```markdown
+## Testing Standards (mandatory)
+Before raising any PR, all tests must pass. Tests are not optional:
+- Backend: TDD (test first). Run `dotnet test` — zero failures.
+- Frontend: Spec-first (test before component). Run `npm test` — zero failures.
+- See `docs/specs/testing-strategy.md` for examples and conventions.
+```
+
+This is a low-effort, high-impact change that ensures the AI always checks the testing requirement before closing a PR.
+
+---
+
+## Recommendation 17 — Add Claude Code Hooks as AI Guards
+
+**From the discussion:** The developer asked whether "command hooks in Windsurf/Cursor" exist in Claude Code. Yes — Claude Code has `PreToolUse` and `PostToolUse` hooks in `.claude/settings.json`.
+
+**What hooks are:** Shell commands that run automatically before or after Claude's tool calls. They run outside the AI's context and cannot be overridden by AI instructions. They are the correct mechanism for structural enforcement that doesn't rely on the AI "remembering" a rule — analogous to git pre-commit hooks or Cursor's command hooks.
+
+**Example: linter hook (PostToolUse on Write/Edit):**
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Write|Edit",
+      "hooks": [{
+        "type": "command",
+        "command": "FILE=$CLAUDE_TOOL_INPUT_FILE_PATH; case \"$FILE\" in *.ts|*.tsx|*.css) npx prettier --write \"$FILE\" 2>/dev/null;; *.cs) dotnet format --include \"$FILE\" 2>/dev/null;; esac"
+      }]
+    }],
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "if echo \"$CLAUDE_TOOL_INPUT_COMMAND\" | grep -qE 'git push.*(origin )?main'; then echo 'AI guard: direct push to main blocked.' && exit 2; fi"
+      }]
+    }]
+  }
+}
+```
+
+**Guards this enables (for free, no AI instruction needed):**
+
+| Problem from POC | Hook that prevents it |
+|---|---|
+| Hardcoded CSS colours (#39) | PostToolUse prettier on `.css`/`.tsx` — enforces formatting |
+| Direct-to-main PR (#80) | PreToolUse bash guard on `git push.*main` |
+| Missing `--assignee` (#10) | PostToolUse bash check after `gh issue create` |
+
+**Implementation:**
+1. Add `.claude/settings.json` with the linter + branch-guard hooks to `web-template`
+2. Add an "AI Guards" section to `web-template/CLAUDE.md` listing the active hooks and explaining the mechanism
+
+This is a Track A change (template-only, no fork code needed).
+
+---
+
+## Recommendation 18 — Document `waiting-for-ai` vs `action-ready` Label Modes
+
+**From the discussion:** The `waiting-for-ai` vs `action-ready` distinction is a fundamental part of the workflow, but it is not written down anywhere the developer can easily reference. The developer used `waiting-for-ai` on re-triggers where they expected continued implementation, but the bot is explicitly programmed to refuse implementation on `waiting-for-ai` issues.
+
+**The distinction:**
+
+| Label | Bot behaviour | When to use |
+|---|---|---|
+| `waiting-for-ai` | Discussion-only: post a comment, answer questions, propose a plan. **Will not implement or raise a PR.** | First contact on a new issue; Q&A; requesting analysis or a plan without implementation |
+| `action-ready` | Implementation: read the issue, write code, raise a PR. | After reviewing/approving a plan; re-triggering after a partial pass; any time you want code produced |
+
+**Fix:**
+1. Add a **"Label Quick Reference"** table to `docs/ai-workflow.md` with the two modes above
+2. Add to `CLAUDE.md`: when closing out a partial pass, include the explicit instruction *"Re-apply `action-ready` (not `waiting-for-ai`) to continue implementation."*
+3. Optional fork enhancement: add a `waiting-for-ai-continue` label that triggers implementation mode without requiring `action-ready` — useful when the developer wants to add context and re-trigger in one step
+
+This is a documentation-only Track A change.
+
+---
+
+## Recommendation 19 — Frontend PR Screenshots + Playwright in Bot Container
+
+**From the discussion:** Frontend changes were merged without visual evidence, and the bot container lacks the tooling to take screenshots automatically.
+
+**Two-part fix:**
+
+**Part 1 — Template gate (Track A):**
+Add a mandatory screenshot AC to `[3]`/`[4]` frontend issue templates:
+```markdown
+## Visual Evidence (mandatory)
+- [ ] Screenshot of the rendered UI attached to the PR body
+- [ ] Shows the feature at ≥1280×800 desktop viewport
+- [ ] If automated: `npx playwright screenshot --full-page http://localhost:5173 pr-screenshot.png`
+```
+
+Add to `CLAUDE.md`:
+```markdown
+## Frontend PR Screenshots (mandatory)
+For any PR modifying React components or CSS:
+- Capture a screenshot before raising the PR.
+- Attach via markdown image in the PR body: `![screenshot](./pr-screenshot.png)` or as a GitHub comment attachment.
+- Preferred tool: `npx playwright screenshot` (if Playwright is available in the environment).
+```
+
+**Part 2 — Bot container (Track B — k8s bot Dockerfile):**
+Add Playwright + Chromium system dependencies to `claude-code-telegram-k8s/Dockerfile`:
+```dockerfile
+# Headless browser dependencies for frontend screenshot capture
+RUN apt-get update && apt-get install -y \
+  libatk-bridge2.0-0 libdrm2 libgbm1 libglib2.0-0 libnss3 libxss1 \
+  libasound2 libx11-xcb1 libxcb-dri3-0 libxcomposite1 libxcursor1 \
+  libxdamage1 libxfixes3 libxrandr2 libxtst6 fonts-liberation \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g playwright && npx playwright install chromium
+```
+
+This gives the AI the ability to automatically capture and attach screenshots when raising frontend PRs, without any developer intervention. Tracked as a new issue on `claude-code-telegram-k8s`.
+
+---
+
+## Recommendation 20 — Include CI/CD Pipelines in Template by Default; Remove `deploy.sh`
+
+**From the discussion:** Testing and deployment pipelines had to be set up manually during the POC. Once the pipeline handles deployment, `deploy.sh` becomes redundant and should be removed.
+
+**Problem:** `web-template` ships with no `.github/workflows/` directory. Every new project starts with:
+- No automated test gate (PRs can merge untested)
+- No automated deployment (developer must run a local script)
+- `deploy.sh` as a fragile stopgap requiring local `docker buildx`, `oci` CLI, and `kubectl` setup
+
+**Proposed fix (Track A — template change):**
+
+Add to `web-template/.github/workflows/`:
+
+| File | Purpose |
+|---|---|
+| `ci.yml` | Run backend unit tests (xUnit), sidecar unit tests (pytest), and E2E tests on every PR and push |
+| `docker-build-push.yml` | Build Docker images for all services and push to OCIR on merge to `main` (GitVersion for semver tagging) |
+
+The deployment workflow requires secrets (`OCIR_USERNAME`, `OCIR_AUTH_TOKEN`) and vars (`OCIR_REGISTRY`, `OCIR_NAMESPACE`) that the operator adds to the new project's GitHub repository settings. Until these are configured the workflow fails visibly with a "secret not found" error — a better signal than having no pipeline at all.
+
+**`deploy.sh` removal:**
+
+Remove `deploy.sh` from the template. Everything it does is already covered by `docker-build-push.yml`:
+
+| `deploy.sh` step | Pipeline equivalent |
+|---|---|
+| `docker buildx build --platform linux/arm64 ... --push` | `docker/build-push-action@v5` in `docker-build-push.yml` |
+| OCI registry purge of old images | Can be added as a post-push step; not strictly necessary with semver tagging |
+| `kubectl rollout restart` | Covered by ArgoCD sync or a `kubectl` step in the same workflow |
+| Hardcoded `REGISTRY_NAMESPACE`, `COMPARTMENT_ID` | Replaced by repo vars/secrets — no project-specific hardcoding |
+
+**`CLAUDE.md` note to add:**
+```markdown
+## Deployment
+Deployment is automated via `.github/workflows/docker-build-push.yml` on merge to `main`.
+Do NOT create or use `deploy.sh` — this file is not part of the scaffold and will not be maintained.
+To deploy manually during development: push to `main` (or trigger the workflow manually via GitHub Actions).
+```
+
+**Why this matters beyond the POC:** Every future project bootstrapped from `web-template` gets CI from day one and a documented deployment path. The developer's only task is to add four repository secrets/vars — the pipelines handle everything else.
+
+---
+
+## Recommendation 21 — Fix Helm Template Variable Substitution at Scaffold Time
+
+**From the discussion:** When `macro-metrics` was scaffolded from `web-template`, the Helm chart templates retained hardcoded names (`web-app-helm`, `balenthiran-helm`) from the template. These weren't caught until deployment was attempted, requiring 5+ iteration PRs to resolve over three days.
+
+**Three concrete fixes:**
+
+**1. Parameterise `helm/_helpers.tpl` — remove all hardcoded template names:**
+Replace `web-app-helm.fullname`, `balenthiran-helm.fullname`, and `balenthiranhelm.fullname` with a single helper that uses `{{ .Values.fullnameOverride | default .Release.Name }}`. The developer sets `fullnameOverride` once at scaffold time and all naming flows from it.
+
+**2. Ship `helm/values.yaml` with a ready-to-run ingress default:**
+```yaml
+# Set this to your app name at scaffold time (e.g. "macro-metrics")
+fullnameOverride: "your-app-name"
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: balenthiran.co.uk
+  tls:
+    - hosts:
+        - balenthiran.co.uk
+      secretName: balenthiran-tls    # shared wildcard cert — no per-project TLS setup
+
+apps:
+  - name: backend
+    ingress:
+      path: /your-app-name/api       # → balenthiran.co.uk/{app-name}/api
+  - name: frontend
+    ingress:
+      path: /your-app-name           # → balenthiran.co.uk/{app-name}
+```
+
+This establishes `balenthiran.co.uk/{app-name}/` as the standard URL convention and reuses the existing `balenthiran-tls` cert — no DNS or TLS setup needed per project.
+
+**3. Do NOT include app-specific secrets in the template:**
+The `FRED_API_KEY`, `ConnectionStrings__DefaultConnection`, and similar per-project secrets were added ad-hoc during the POC. The template should ship without any `secretKeyRef` env vars — the developer adds them per project. A commented scaffold instruction is enough:
+
+```yaml
+# App-specific secrets — uncomment and populate per project:
+# env:
+#   - name: MY_API_KEY
+#     valueFrom:
+#       secretKeyRef:
+#         name: {{ .Values.fullnameOverride }}-secrets
+#         key: MY_API_KEY
+```
+
+**CLAUDE.md scaffold instruction to add:**
+```markdown
+## Helm Scaffold Setup
+After creating a new project from this template:
+1. Set `helm/values.yaml` → `fullnameOverride` to your app name (lowercase, hyphens)
+2. Update `apps[*].ingress.path` to `/{app-name}` and `/{app-name}/api`
+3. The `balenthiran.co.uk` host and `balenthiran-tls` cert are shared — do not change them
+4. Add app-specific env vars / secrets as needed — no secrets are pre-scaffolded
+```
+
+**Why this matters:** Without this fix, every project scaffolded from the template will hit the same deployment debugging cycle. The fix is purely structural (template variables) — it adds zero complexity but saves hours of iteration.
+
+---
+
+## Implementation Classification — Template vs Fork
+
+All 15 recommendations fall into one of two tracks. This matters for sequencing: template changes can be applied immediately; fork changes require a code PR on `claude-code-telegram-k8s`.
+
+### Track A — Template / CLAUDE.md only (no fork code needed)
+
+| Rec | Change location |
+|---|---|
+| 1 — Extended [1c] questionnaire | `web-template` `[1d]` issue body |
+| 2 — Assumptions & Decisions PR section | `CLAUDE.md` PR convention block |
+| 3 — Phase Guard comments | `CLAUDE.md` agent conventions |
+| 4 — Split [3a] into tech + stories | `web-template` `[3]` issue body |
+| 5 — Data source validation in [5a] | `web-template` `[5a]` AC + `[1d]` questionnaire |
+| 6 — Branch enforcement (workflow file) | `web-template` `.github/workflows/` |
+| 7 — Deployment phase | `web-template` `docs/ai-workflow.md` + `sdd-workflow.md` |
+| 8 — Retro phase | `web-template` `docs/sdd-workflow.md` |
+| 9 — Clarification protocol | `CLAUDE.md` |
+| 10 — Assume vs Ask mode | `CLAUDE.md` + `web-template` `[1d]` questionnaire |
+| 11 — Always assign repository owner | `CLAUDE.md` + `web-template` `init-issues.mjs` |
+| 12 — Self-relabelling on partial completion | `CLAUDE.md` multi-pass block |
+| 13 — Structured pass summaries | `CLAUDE.md` agent conventions |
+| 14 — Multi-pass context (partial) | `CLAUDE.md` multi-pass block |
+| 16 — Surface testing in issue ACs | `web-template` `[3]` + `[5]` issue bodies; `CLAUDE.md` testing section |
+| 17 — Claude Code hooks / AI guards | `web-template` `.claude/settings.json` + `CLAUDE.md` AI Guards section |
+| 18 — Label mode documentation | `web-template` `docs/ai-workflow.md`; `CLAUDE.md` label quick reference |
+| 19 (template part) — Screenshot gate in frontend ACs | `web-template` `[3]`/`[4]` issue bodies; `CLAUDE.md` screenshot rule |
+| 20 — CI/CD pipelines in template; remove `deploy.sh` | `web-template` `.github/workflows/ci.yml` + `docker-build-push.yml`; remove `deploy.sh`; `CLAUDE.md` deployment note |
+| 21 — Fix Helm variable substitution at scaffold time | `web-template` `helm/_helpers.tpl` (parameterise); `helm/values.yaml` (ingress defaults + `balenthiran-tls`); `CLAUDE.md` Helm scaffold section |
+
+### Track B — Fork-level changes (require PR on `claude-code-telegram-k8s`)
+
+| Rec | Fork change | Tracked |
+|---|---|---|
+| 12 — per-label `max_turns` config | `values.yaml` `claudeMaxTurnsByLabel` map | [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) |
+| 14 — Latest comment as task prompt | `_build_github_prompt()` — fetch + find latest unanswered comment | [#33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) |
+| 15 — max_turns visibility + limit increase | `stop_reason` detection; ⚠️ comment + Telegram alert; raise default | [#34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) |
+| 19 (container part) — Playwright + headless browser | Add Chromium + Playwright to `Dockerfile` for automated screenshot capture | New issue to be raised |
+
+---
+
+## Summary Priority Matrix
+
+| Recommendation | Impact | Effort | Track | Priority |
+|---|---|---|---|---|
+| 1 — Extended [1c] questionnaire | High | Low | Template | 🔴 Do first |
+| 2 — Assumptions PR section | High | Low | Template | 🔴 Do first |
+| 5 — Data source validation in [5a] | High | Low | Template | 🔴 Do first |
+| 6 — Dev-first branch workflow | High | Low | Template | 🔴 Do first |
+| 11 — Always assign repository owner | High | Low | Template | 🔴 Do first |
+| 14 — Multi-pass context (CLAUDE.md part) | High | Low | Template | 🔴 Do first |
+| 14 — Latest comment as prompt | High | Medium | Fork (#33) | 🔴 Do first |
+| 15 — max_turns visibility + limit increase | Medium | Low | Fork (#34) | 🔴 Do first |
+| 7 — Deployment phase | High | Medium | Template | 🟠 Next sprint |
+| 12 — Reduce action-ready relabelling | Medium | Low | Template + Fork | 🟠 Next sprint |
+| 8 — Retro phase | Medium | Low | Template | 🟠 Next sprint |
+| 4 — Split [3a] | Medium | Low | Template | 🟠 Next sprint |
+| 13 — Structured pass summaries | Medium | Medium | Template | 🟠 Next sprint |
+| 16 — Surface testing in issue ACs | High | Low | Template | 🟠 Next sprint |
+| 17 — Claude Code hooks / AI guards | Medium | Low | Template | 🟠 Next sprint |
+| 18 — `waiting-for-ai` vs `action-ready` documentation | Medium | Low | Template | 🟠 Next sprint |
+| 19 — Frontend screenshots + Playwright in bot | Medium | Low (template) / Medium (fork) | Template + Fork | 🟠 Next sprint |
+| 20 — CI/CD pipelines in template; remove deploy.sh | High | Low | Template | 🔴 Do first |
+| 21 — Fix Helm variable substitution at scaffold | High | Low | Template | 🔴 Do first |
+| 3 — Phase Guard comments | Medium | Low | Template | 🟡 Nice to have |
+| 9 — Clarification protocol | Medium | Low | Template | 🟡 Nice to have |
+| 10 — Assume vs Ask mode | Low | Low | Template | 🟡 Nice to have |

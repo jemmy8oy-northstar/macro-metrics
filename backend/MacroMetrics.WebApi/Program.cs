@@ -15,6 +15,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference("/scalar/v1");
 }
 
+app.UsePathBase("/macro-metrics");
 app.UseHttpsRedirection();
 
 app.MapGroup("/api")

@@ -1,0 +1,129 @@
+# MacroMetrics POC — Retrospective Overview
+
+**Date:** 2026-06-07
+**Scope:** Full POC from repository creation to deployment (issues #1–#88)
+**Process:** Spec Driven Development (SDD) with AI pair-programming via Claude Code
+
+---
+
+## What Was Built
+
+MacroMetrics is a financial dashboard that displays macroeconomic ratios (e.g. Gold/Wages, S&P 500/US CPI) alongside standalone indicator charts. The POC delivered:
+
+- A fully navigable React + Vite frontend with Recharts visualisations
+- A stateless .NET 8 Minimal API proxy that aggregates data from ONS (UK), FRED (US), Robert Shiller's dataset, and a Python yfinance sidecar
+- In-memory caching with `IMemoryCache` and `Cache-Control` headers
+- A Helm chart deployed to OCI Kubernetes
+- A full CI/CD pipeline (GitHub Actions → OCI Container Registry → Kubernetes)
+- 200+ tests (unit + integration)
+
+---
+
+## POC Timeline (Phases Completed)
+
+| Phase | GitHub Phase | Status | Key Output |
+|---|---|---|---|
+| Vision & Planning | Phase 1 | ✅ Complete | Project spec, epics, features |
+| UI/UX Design | Phase 2 | ✅ Complete | ASCII mockups, Mermaid diagrams |
+| Frontend User Stories | Phase 3 | ✅ Complete | BDD user stories, tech decisions |
+| Frontend Implementation | Phase 4 | ✅ Complete | React app with Faker data |
+| Backend Design | Phase 5 | ✅ Complete | API contracts, service layer, ADRs |
+| Backend Implementation | Phase 6 | ✅ Mostly complete | Real fetchers, normalisation, ratio engine |
+| Deployment | Informal | ✅ Complete | Helm + OCI K8s deployment |
+| Retro | Phase 7 (new) | ✅ In progress | This document |
+
+### Remaining open items at POC close
+- #57 / PR #79 — `Cache-Control` headers PR raised but not merged (ready)
+- #58 — Unknown metric ID returns 404 (not implemented)
+- #59 — Ratio endpoint rejects invalid/missing inputs (not implemented)
+- #39 — Hardcoded dark-theme CSS colours (cosmetic)
+- #2 — Pipeline secrets setup (ongoing/operational)
+- #11 — Postgres DB hook-up (explicitly deferred, post-MVP)
+- #80, #81, #87 — Branch discipline, deploy pipeline, deployment issues
+
+---
+
+## Overall Verdict
+
+The SDD process **worked well as a forcing function for upfront thinking**. The AI successfully produced spec documents, ASCII mockups, BDD user stories, backend design, and implementation — all with minimal human code-writing. The main friction points were around:
+
+1. **Template gaps** — questions the AI kept re-asking because they weren't captured in the spec questionnaire
+2. **Branch discipline** — direct-to-main PRs caused a significant `main`/`dev` drift incident
+3. **Assumption surfacing** — the AI made assumptions that were sometimes wrong (e.g. FRED hosting CAPE), leading to bug issues
+4. **Timeout/chunking** — one issue (#57) timed out because the task was too complex for a single AI run; there was no visibility that the limit was hit
+5. **Dependency checking noise** — the AI re-checked dependency conditions multiple times per issue, adding friction
+6. **Assignee consistency** — ~65% of Phase 6 issues and PRs were created without assigning the developer, breaking GitHub notifications
+7. **action-ready relabelling** — developer had to manually re-apply the label after every AI pass, including timeouts
+8. **Multi-pass context** — the AI re-asked questions already answered in previous comments because it used the issue body as its prompt rather than the latest unanswered comment
+9. **Testing not enforced by ACs** — 200+ tests were produced but this relied on the AI choosing to apply the testing strategy; no issue AC mandated it
+10. **No AI guards / hooks** — structural quality rules (CSS formatting, branch discipline, assignee) were enforced by instruction only, with no automatic enforcement via Claude Code hooks
+11. **`waiting-for-ai` vs `action-ready` confusion** — the two labels trigger fundamentally different bot modes (discussion-only vs full implementation). Using the wrong label at a re-trigger point sent the bot into the wrong mode with no visible signal to the developer
+12. **No screenshot gate for frontend PRs** — frontend changes were merged without visual evidence; the bot container also lacks a headless browser, making automated screenshot capture impossible
+13. **CI/CD pipelines not in template** — testing and deployment pipelines had to be added manually during the POC. The `ci.yml` (unit, integration, E2E tests) and `docker-build-push.yml` (OCIR push) workflows did not exist on day one. `deploy.sh` served as a manual workaround until the pipeline was wired up; once the pipeline is in the template it becomes redundant and should be removed
+14. **Helm variable names not updated at scaffold time** — the Helm chart templates shipped with hardcoded names from the template (`web-app-helm`, `balenthiran-helm`) that were not replaced when the project was scaffolded. This caused deployment failures requiring 5+ iteration PRs (#83, #86, #90, #100, #101, #102) to resolve. The template should use parameterised ingress defaults (`balenthiran.co.uk/{app-name}/`, `balenthiran-tls`) with `fullnameOverride` as the single scaffold-time variable; app-specific secrets are added per project, not in the template
+
+See the sibling retro documents for detail on each area.
+
+### Follow-on actions raised during retro review
+
+As a result of the post-retro discussion two follow-on issues were raised on the underlying fork:
+
+| Issue | What it fixes |
+|---|---|
+| [claude-code-telegram-k8s #33](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/33) | per-label `max_turns` config; use latest unanswered comment as task prompt (fixes re-asking pattern) |
+| [claude-code-telegram-k8s #34](https://github.com/jemmy8oy/claude-code-telegram-k8s/issues/34) | Post ⚠️ GitHub comment + Telegram alert when iteration limit is hit; raise default `claudeMaxTurns` to 100 |
+
+These complement the template-level fixes in this retro. The ~80% of improvements that only require template / CLAUDE.md changes can be applied independently; the fork changes address the remaining ~20% that require infrastructure changes.
+
+A full audit of the `claude-code-telegram` bot's prompts and workflow was also completed (see `06-template-audit.md` Finding 15). Key confirmed findings: the bot passes only the issue body as the prompt (no comments), `force_new=True` ensures each trigger starts a completely fresh session, and there is no `stop_reason` detection for `max_turns`. Issues #33 and #34 above address these directly.
+
+**Additional findings from post-retro discussion (2026-06-08):**
+- Testing standards exist in `docs/specs/testing-strategy.md` but are not surfaced in issue ACs — Gap 15 / Recommendation 16
+- Claude Code supports `PreToolUse`/`PostToolUse` hooks (AI guards) equivalent to Cursor/Windsurf command hooks — not yet configured in `web-template` — Gap 16 / Recommendation 17
+- `waiting-for-ai` vs `action-ready` label mode distinction is not documented in the workflow — Gap 17 / Recommendation 18
+- Frontend PRs have no screenshot requirement and the bot container has no headless browser; Gap 18 / Recommendation 19 covers both the template gate and the k8s bot Dockerfile change needed
+- CI/CD pipelines (`ci.yml` for tests; `docker-build-push.yml` for deployment) were added manually during the POC — they should be in `web-template` by default; `deploy.sh` (the manual precursor) should be removed — Gap 19 / Recommendation 20
+- Helm templates shipped with hardcoded `web-app-helm` / `balenthiran-helm` names not replaced at scaffold time — caused 5+ deployment iteration PRs; template should use parameterised ingress defaults (`balenthiran.co.uk/{app-name}/`, `balenthiran-tls`) — Gap 20 / Recommendation 21
+
+**Repos requiring changes from this retro (see `06-template-audit.md` § Retro Follow-on Repo Map):**
+
+| Repo | What needs changing |
+|---|---|
+| `jemmy8oy/web-template` | Template / CLAUDE.md / workflow / hooks (Track A — all template gaps) |
+| `jemmy8oy/claude-code-telegram-k8s` | Infrastructure: max_turns, latest-comment prompt, ⚠️ notification, Playwright/screenshot deps |
+| `jemmy8oy/claude-code-telegram` | Core bot source: `_build_github_prompt()`, `stop_reason` detection |
+| `jemmy8oy/macro-metrics` | Project-level CLAUDE.md improvements (already in `main` once this PR merges) |
+
+---
+
+## Developer Autonomy Observations
+
+During the retro, the developer raised several questions about increasing AI autonomy. These are captured here with analysis:
+
+### "I often have to keep relabelling issues with action-ready"
+**Current friction:** Every AI trigger removes `action-ready`. Multi-pass issues (e.g. #8 required 3 passes, #57 timed out) require repeated manual re-labelling.
+**Proposed fix:** AI self-relabels `action-ready` after partial passes. See Recommendation 12.
+
+### "Maybe I need to improve the iteration length — it's 20 rounds currently"
+**Analysis:** 20 turns is low for complex orchestrator issues. A `[5a]` backend design spec that reads spec documents, writes ADRs, and raises a PR realistically needs 30–50 turns. Implementation issues `[6]` need 20–40. Recommendation: set `max_turns` per issue type (see Recommendation 12).
+
+### "Wondering whether I can make the bot remember sessions per issue"
+**Analysis:** The AI is stateless between triggers. Every pass re-reads the same files and re-checks the same dependencies. For late-phase issues (Phase 6), this added substantial overhead.
+**Proposed fix:** Structured pass summary comments — the AI writes a compact summary at the end of each pass that the next pass reads instead of re-discovering everything from scratch. See Recommendation 13.
+
+### "Whether we can have a process where the AI can make sensible suggestions and in the PR the AI can outline all assumptions"
+**Analysis:** This is the "Assumptions & Decisions" PR section (Recommendation 2). It lets the developer scan a table of AI decisions in the PR rather than reviewing every line of code. This directly addresses the silent assumption problem (CAPE/FRED, branch targeting, CSS approach). Recommend implementing this as a mandatory PR template section.
+
+---
+
+## Retrospective Document Index
+
+| Document | Focus |
+|---|---|
+| [00-overview.md](./00-overview.md) | This document — high-level summary |
+| [01-sdd-process.md](./01-sdd-process.md) | Phase-by-phase SDD process analysis |
+| [02-issue-analysis.md](./02-issue-analysis.md) | Every issue categorised and assessed |
+| [03-template-gaps.md](./03-template-gaps.md) | Template gaps and specific improvement proposals |
+| [04-technical.md](./04-technical.md) | Technical decisions, bugs, and implementation quality |
+| [05-recommendations.md](./05-recommendations.md) | Concrete recommendations for the next project |
+| [06-template-audit.md](./06-template-audit.md) | Specific file-by-file changes needed in `web-template` |
