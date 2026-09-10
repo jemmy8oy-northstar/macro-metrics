@@ -41,6 +41,12 @@
     "vite": "npm:rolldown-vite@7.1.14"
   },
   "overrides": {
-    "vite": "npm:rolldown-vite@7.1.14"
+    "vite": "npm:rolldown-vite@7.1.14",
+    "sass": {
+      "immutable": "^5.1.8"
+    },
+    "micromatch": {
+      "picomatch": "^2.3.2"
+    }
   }
 }
